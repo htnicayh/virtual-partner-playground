@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common'
 import { ConfigModule } from '@nestjs/config'
 import { ChatModule } from './chat/chat.module'
 import { ConversationModule } from './conversation/conversation.module'
+import { HealthModule } from './health/health.module'
 import { OpenaiModule } from './openai/openai.module'
 
 @Module({
@@ -11,6 +12,7 @@ import { OpenaiModule } from './openai/openai.module'
 			envFilePath: '.env'
 		}),
 		ChatModule,
+		HealthModule,
 		OpenaiModule,
 		ConversationModule
 	]
