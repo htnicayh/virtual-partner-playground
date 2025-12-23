@@ -1,31 +1,25 @@
 import { Injectable, Logger } from '@nestjs/common'
 import { ConfigService } from '@nestjs/config'
 import OpenAI from 'openai'
-
-interface ChatCompletionMetadata {
-	inputTokens: number
-	outputTokens: number
-	totalTokens: number
-}
+import { ChatCompletionMetadata } from 'src/common/interfaces/chat.interface'
 
 @Injectable()
 export class OpenaiService {
 	private readonly logger = new Logger(OpenaiService.name)
-	private openai: OpenAI
-	private model: string
-	private ttsVoice: string
 
-	constructor(private configService: ConfigService) {
-		this.initializeClient()
-	}
+	private readonly openai: OpenAI
+	private readonly model: string
+	private readonly ttsVoice: string
 
-	private initializeClient() {
+	constructor(private readonly configService: ConfigService) {
+		const endpoint = this.configService.get<string>('OPENAI_BASE_ENDPOINT')
 		const apiKey = this.configService.get<string>('OPENAI_API_KEY')
+
 		if (!apiKey) {
-			throw new Error('❌ OPENAI_API_KEY not configured')
+			throw new Error('OPENAI_API_KEY not configured')
 		}
 
-		this.openai = new OpenAI({ apiKey })
+		this.openai = new OpenAI({ baseURL: endpoint, apiKey })
 		this.model = this.configService.get<string>('OPENAI_MODEL') || 'gpt-4o-mini'
 		this.ttsVoice = this.configService.get<string>('OPENAI_TTS_VOICE') || 'nova'
 
@@ -35,14 +29,17 @@ export class OpenaiService {
 	}
 
 	/**
-	 * Generate chat response using OpenAI GPT
+	 * Generates a chat response from the OpenAI API.
+	 * @param messages - An array of objects containing the role and content of the message.
+	 * @param systemPrompt - The system prompt to generate the chat response with.
+	 * @returns A promise that resolves to an object containing the chat response and metadata.
 	 */
 	async generateChatResponse(
 		messages: Array<{ role: string; content: string }>,
 		systemPrompt: string
 	): Promise<{ response: string; metadata: ChatCompletionMetadata }> {
 		try {
-			this.logger.debug(`📝 Generating chat response with ${messages.length} messages`)
+			this.logger.debug(`Generating chat response with ${messages.length} messages`)
 
 			const response = await this.openai.chat.completions.create({
 				model: this.model,
@@ -64,21 +61,25 @@ export class OpenaiService {
 				totalTokens: response.usage?.total_tokens || 0
 			}
 
-			this.logger.debug(`✅ Chat response generated (${metadata.totalTokens} tokens)`)
+			this.logger.debug(`Chat response generated (${metadata.totalTokens} tokens)`)
 
 			return { response: aiMessage, metadata }
 		} catch (e: any) {
-			this.logger.error(`❌ Chat error: ${e.message}`)
+			this.logger.error(`Chat error: ${e.message}`)
+
 			throw e
 		}
 	}
 
 	/**
-	 * Convert audio to text using Whisper API
+	 * Converts speech to text using the OpenAI Whisper STT model.
+	 * @param audioBuffer The audio data to transcribe as a Buffer.
+	 * @param language The language of the audio data. Defaults to 'en'.
+	 * @returns A promise that resolves to the transcribed text.
 	 */
 	async speechToText(audioBuffer: Buffer, language: string = 'en'): Promise<string> {
 		try {
-			this.logger.debug(`🎤 Converting speech to text (${audioBuffer.length} bytes)`)
+			this.logger.debug(`Converting speech to text (${audioBuffer.length} bytes)`)
 
 			const response = await this.openai.audio.transcriptions.create({
 				file: new File([audioBuffer as any], 'audio.wav', { type: 'audio/wav' }),
@@ -93,20 +94,24 @@ export class OpenaiService {
 				throw new Error('Could not transcribe audio')
 			}
 
-			this.logger.debug(`✅ Transcription: "${transcription}"`)
+			this.logger.debug(`Transcription: "${transcription}"`)
+
 			return transcription
 		} catch (e: any) {
-			this.logger.error(`❌ STT error: ${e.message}`)
+			this.logger.error(`STT error: ${e.message}`)
+
 			throw e
 		}
 	}
 
 	/**
-	 * Convert text to speech using OpenAI TTS API
+	 * Converts text to speech using the OpenAI TTS model.
+	 * @param text The text to convert to speech.
+	 * @returns A promise that resolves to a base64-encoded audio string.
 	 */
 	async textToSpeech(text: string): Promise<string> {
 		try {
-			this.logger.debug(`🔊 Converting text to speech (${text.length} chars)`)
+			this.logger.debug(`Converting text to speech (${text.length} chars)`)
 
 			const response = await this.openai.audio.speech.create({
 				model: 'tts-1',
@@ -118,10 +123,12 @@ export class OpenaiService {
 			const buffer = Buffer.from(await response.arrayBuffer())
 			const audioBase64 = buffer.toString('base64')
 
-			this.logger.debug(`✅ TTS audio generated (${audioBase64.length} bytes)`)
+			this.logger.debug(`TTS audio generated (${audioBase64.length} bytes)`)
+
 			return audioBase64
 		} catch (e: any) {
-			this.logger.error(`❌ TTS error: ${e.message}`)
+			this.logger.error(`TTS error: ${e.message}`)
+
 			throw e
 		}
 	}

@@ -49,7 +49,12 @@ Keep responses focused and under 150 words for better learning flow.`
 	) {}
 
 	/**
-	 * Process text message
+	 * Processes a text message and returns the response from the AI.
+	 * @param userMessage The text message to process.
+	 * @param conversationId The ID of the conversation to process the message in. Optional.
+	 * @param userId The ID of the user sending the message. Optional.
+	 * @returns A promise that resolves to an object containing the AI's response, the conversation ID, and the message ID.
+	 * @throws BadRequestException If the message is empty or not provided.
 	 */
 	async processTextMessage(
 		userMessage: string,
@@ -87,13 +92,11 @@ Keep responses focused and under 150 words for better learning flow.`
 				this.systemPrompt
 			)
 
-			const userMessageId = await this.conversationService.addMessage(convId, 'user', userMessage)
-
 			const aiMessageId = await this.conversationService.addMessage(convId, 'assistant', aiMessage)
 
 			const processingTime = Date.now() - startTime
 
-			this.logger.log(`✅ Text message processed (${metadata.totalTokens} tokens, ${processingTime}ms)`)
+			this.logger.log(`Text message processed (${metadata.totalTokens} tokens, ${processingTime}ms)`)
 
 			return {
 				aiMessage,
@@ -106,13 +109,19 @@ Keep responses focused and under 150 words for better learning flow.`
 				}
 			}
 		} catch (e: any) {
-			this.logger.error(`❌ Error processing text message: ${e.message}`)
+			this.logger.error(`Error processing text message: ${e.message}`)
+
 			throw e
 		}
 	}
 
 	/**
-	 * Process voice message (STT -> Chat -> TTS)
+	 * Processes a voice message and returns the response from the AI.
+	 * @param audioBase64 The audio data to transcribe as a base64-encoded string.
+	 * @param conversationId The ID of the conversation to process the message in. Optional.
+	 * @param userId The ID of the user sending the message. Optional.
+	 * @returns A promise that resolves to an object containing the user's transcription, AI's response, and the base64-encoded audio response.
+	 * @throws BadRequestException If the audio data is empty or not provided.
 	 */
 	async processVoiceMessage(
 		audioBase64: string,
@@ -137,18 +146,20 @@ Keep responses focused and under 150 words for better learning flow.`
 
 			const startTime = Date.now()
 
-			this.logger.log('🎤 Converting speech to text...')
+			this.logger.log('Converting speech to text...')
+
 			const audioBuffer = Buffer.from(audioBase64, 'base64')
 			const userTranscription = await this.openaiService.speechToText(audioBuffer)
 
 			const processedMessage = await this.processTextMessage(userTranscription, conversationId, userId)
 
-			this.logger.log('🔊 Converting response to speech...')
+			this.logger.log('Converting response to speech...')
+
 			const responseAudio = await this.openaiService.textToSpeech(processedMessage.aiMessage)
 
 			const processingTime = Date.now() - startTime
 
-			this.logger.log(`✅ Voice message processed (${processingTime}ms)`)
+			this.logger.log(`Voice message processed (${processingTime}ms)`)
 
 			return {
 				userTranscription,
@@ -163,16 +174,20 @@ Keep responses focused and under 150 words for better learning flow.`
 				}
 			}
 		} catch (e: any) {
-			this.logger.error(`❌ Error processing voice message: ${e.message}`)
+			this.logger.error(`Error processing voice message: ${e.message}`)
+
 			throw e
 		}
 	}
 
 	/**
-	 * Get conversation history
+	 * Retrieves the conversation history for a given conversation ID.
+	 * @param conversationId - The ID of the conversation to retrieve the history for.
+	 * @returns A promise that resolves to an array of objects containing the conversation history.
 	 */
 	async getConversationHistory(conversationId: string): Promise<any[]> {
 		const messages = await this.conversationService.getMessages(conversationId)
+
 		return messages.map((msg) => msg.toJSON())
 	}
 
@@ -188,6 +203,7 @@ Keep responses focused and under 150 words for better learning flow.`
 	 */
 	updateSystemPrompt(newPrompt: string): void {
 		this.systemPrompt = newPrompt
-		this.logger.log('🔧 System prompt updated')
+
+		this.logger.log('System prompt updated')
 	}
 }

@@ -6,11 +6,13 @@ import { Message } from './entities/message.entity'
 @Injectable()
 export class ConversationService {
 	private readonly logger = new Logger(ConversationService.name)
-	private conversations = new Map<string, Conversation>()
-	private messages = new Map<string, Message[]>()
+	private readonly conversations = new Map<string, Conversation>()
+	private readonly messages = new Map<string, Message[]>()
 
 	/**
-	 * Create a new conversation
+	 * Creates a new conversation.
+	 * @param {string} [userId] - The user ID associated with the conversation.
+	 * @returns {Promise<string>} - A promise that resolves to the ID of the created conversation.
 	 */
 	async createConversation(userId?: string): Promise<string> {
 		const conversationId = uuidv4()
@@ -19,12 +21,18 @@ export class ConversationService {
 		this.conversations.set(conversationId, conversation)
 		this.messages.set(conversationId, [])
 
-		this.logger.log(`📚 Conversation created: ${conversationId}`)
+		this.logger.log(`Conversation created: ${conversationId}`)
+
 		return conversationId
 	}
 
 	/**
-	 * Add a message to a conversation
+	 * Adds a new message to a conversation.
+	 * @param conversationId - The ID of the conversation to add the message to.
+	 * @param role - The role of the message ('user' or 'assistant').
+	 * @param content - The content of the message.
+	 * @returns A promise that resolves to the ID of the added message.
+	 * @throws {NotFoundException} If the conversation with the given ID does not exist.
 	 */
 	async addMessage(conversationId: string, role: 'user' | 'assistant', content: string): Promise<string> {
 		if (!this.conversations.has(conversationId)) {
@@ -35,18 +43,23 @@ export class ConversationService {
 		const message = new Message(messageId, conversationId, role, content)
 
 		const convMessages = this.messages.get(conversationId) || []
+
 		convMessages.push(message)
 		this.messages.set(conversationId, convMessages)
 
 		const conversation = this.conversations.get(conversationId)!
+
 		conversation.incrementMessageCount()
 
-		this.logger.debug(`📝 Message added: ${messageId} (${role})`)
+		this.logger.debug(`Message added: ${messageId} (${role})`)
+
 		return messageId
 	}
 
 	/**
-	 * Get all messages in a conversation
+	 * Retrieves the messages associated with a conversation.
+	 * @throws {NotFoundException} If the conversation with the given ID does not exist.
+	 * @returns A promise that resolves to an array of Message objects containing the messages associated with the conversation.
 	 */
 	async getMessages(conversationId: string): Promise<Message[]> {
 		if (!this.conversations.has(conversationId)) {
@@ -57,41 +70,57 @@ export class ConversationService {
 	}
 
 	/**
-	 * Get recent messages for context
+	 * Retrieves the most recent messages from a conversation.
+	 * @param conversationId - The ID of the conversation to retrieve the messages from.
+	 * @param limit - The maximum number of messages to retrieve. Defaults to 20.
+	 * @returns A promise that resolves to an array of Message objects containing the most recent messages.
 	 */
 	async getRecentMessages(conversationId: string, limit: number = 20): Promise<Message[]> {
 		const allMessages = await this.getMessages(conversationId)
+
 		return allMessages.slice(-limit)
 	}
 
 	/**
-	 * Get conversation details
+	 * Retrieves a conversation by its ID.
+	 * @param conversationId - The ID of the conversation to retrieve.
+	 * @returns A promise that resolves to the Conversation object associated with the given ID.
+	 * @throws {NotFoundException} If the conversation with the given ID does not exist.
 	 */
 	async getConversation(conversationId: string): Promise<Conversation> {
 		const conv = this.conversations.get(conversationId)
+
 		if (!conv) {
 			throw new NotFoundException(`Conversation ${conversationId} not found`)
 		}
+
 		return conv
 	}
 
 	/**
-	 * Get all conversations for a user
+	 * Retrieves all conversations associated with a given user ID.
+	 * @param userId - The ID of the user to retrieve conversations for.
+	 * @returns A promise that resolves to an array of Conversation objects associated with the given user ID.
 	 */
 	async getUserConversations(userId: string): Promise<Conversation[]> {
 		const allConversations = Array.from(this.conversations.values())
+
 		return allConversations.filter((c) => c.userId === userId)
 	}
 
 	/**
-	 * Get all conversations
+	 * Retrieves all conversations stored in the service.
+	 * @returns A promise that resolves to an array of Conversation objects.
 	 */
 	async getAllConversations(): Promise<Conversation[]> {
 		return Array.from(this.conversations.values())
 	}
 
 	/**
-	 * Delete a conversation
+	 * Deletes a conversation by its ID.
+	 * @param conversationId - The ID of the conversation to delete.
+	 * @returns A promise that resolves to void when the conversation is deleted.
+	 * @throws {NotFoundException} If the conversation with the given ID does not exist.
 	 */
 	async deleteConversation(conversationId: string): Promise<void> {
 		if (!this.conversations.has(conversationId)) {
@@ -104,7 +133,10 @@ export class ConversationService {
 	}
 
 	/**
-	 * Clear all messages in a conversation
+	 * Clears a conversation by its ID.
+	 * @param conversationId - The ID of the conversation to clear.
+	 * @returns A promise that resolves to void when the conversation is cleared.
+	 * @throws {NotFoundException} If the conversation with the given ID does not exist.
 	 */
 	async clearConversation(conversationId: string): Promise<void> {
 		if (!this.conversations.has(conversationId)) {
@@ -112,7 +144,9 @@ export class ConversationService {
 		}
 
 		const conversation = this.conversations.get(conversationId)!
+
 		this.messages.set(conversationId, [])
+
 		conversation.messageCount = 0
 		conversation.updateTimestamp()
 
@@ -120,7 +154,17 @@ export class ConversationService {
 	}
 
 	/**
-	 * Get conversation statistics
+	 * Retrieves statistics about a conversation.
+	 * @param conversationId - The ID of the conversation to retrieve statistics for.
+	 * @returns A promise that resolves to an object containing the conversation statistics.
+	 * The object will contain the following properties:
+	 * - `conversationId`: The ID of the conversation.
+	 * - `totalMessages`: The total number of messages in the conversation.
+	 * - `userMessages`: The number of messages sent by the user in the conversation.
+	 * - `aiMessages`: The number of messages sent by the AI in the conversation.
+	 * - `createdAt`: The timestamp when the conversation was created.
+	 * - `updatedAt`: The timestamp when the conversation was last updated.
+	 * - `duration`: The duration of the conversation in milliseconds.
 	 */
 	async getConversationStats(conversationId: string): Promise<any> {
 		const conversation = await this.getConversation(conversationId)

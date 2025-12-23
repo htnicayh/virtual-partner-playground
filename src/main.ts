@@ -24,9 +24,9 @@ async function bootstrap() {
 
 	await app.listen(port)
 
-	logger.log(`- 🎓 Virtual English Partner Backend `)
-	logger.log(`- ✅ Server running on port ${port}`)
-	logger.log(`- 🌐 WebSocket: ws://localhost:${port}`)
+	logger.log(`- Virtual English Partner Backend `)
+	logger.log(`- Server running on port ${port}`)
+	logger.log(`- WebSocket: ws://localhost:${port}`)
 }
 
 bootstrap().catch(() => process.exit(1))
