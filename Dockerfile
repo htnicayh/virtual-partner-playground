@@ -28,7 +28,7 @@ ENV NODE_ENV=production
 COPY package.json bun.lockb* ./
 
 # Install only production dependencies
-RUN bun install --frozen-lockfile --production=true
+RUN bun install --frozen-lockfile 
 
 # Copy compiled code from builder
 COPY --from=builder /app/dist ./dist
@@ -37,8 +37,8 @@ COPY --from=builder /app/dist ./dist
 EXPOSE 3000
 
 # Health check
-HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-  CMD bun run -e "const http = require('http'); const req = http.request('http://localhost:3000/health', (res) => process.exit(res.statusCode === 200 ? 0 : 1)); req.on('error', () => process.exit(1)); req.end();" || exit 1
+# HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+#   CMD bun run -e "const http = require('http'); const req = http.request('http://localhost:3000/health', (res) => process.exit(res.statusCode === 200 ? 0 : 1)); req.on('error', () => process.exit(1)); req.end();" || exit 1
 
 # Start the application
 CMD ["bun", "run", "dist/main.js"]

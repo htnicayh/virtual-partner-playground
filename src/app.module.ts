@@ -10,9 +10,9 @@ import { OpenaiModule } from './openai/openai.module'
 			isGlobal: true,
 			envFilePath: '.env'
 		}),
+		ChatModule,
 		OpenaiModule,
-		ConversationModule,
-		ChatModule
+		ConversationModule
 	]
 })
 export class AppModule {}
