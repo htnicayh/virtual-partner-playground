@@ -9,16 +9,15 @@ import {
 	WebSocketServer
 } from '@nestjs/websockets'
 import { Server, Socket } from 'socket.io'
-import { StreamingSession } from '../commons/interfaces/streaming-session.interface'
-import { ConversationService } from '../services/conversation.service'
+import { AudioService } from '../services/audio.service'
+import { CacheService } from '../services/cache.service'
 import { LlmService } from '../services/llm.service'
-import { SessionService } from '../services/session.service'
 import { STTService } from '../services/speech-to-text.service'
 import { TTSService } from '../services/text-to-speech.service'
 
 @WebSocketGateway({
 	cors: {
-		origin: process.env.FRONTEND_URL || 'http://localhost:5173',
+		origin: process.env.FRONTEND_URL || 'http://127.0.0.1:5500',
 		credentials: true
 	},
 	namespace: '/audio'
@@ -30,16 +29,12 @@ export class AudioStreamGateway implements OnGatewayConnection, OnGatewayDisconn
 	@WebSocketServer()
 	server: Server
 
-	private streamingSessions = new Map<string, StreamingSession>()
-
-	private readonly MAX_AUDIO_DURATION = 300000
-
 	constructor(
+		private readonly audioService: AudioService,
+		private readonly cacheService: CacheService,
 		private readonly sttService: STTService,
 		private readonly ttsService: TTSService,
-		private readonly llmService: LlmService,
-		private readonly conversationService: ConversationService,
-		private readonly sessionService: SessionService
+		private readonly llmService: LlmService
 	) {}
 
 	async handleConnection(client: Socket) {
@@ -55,15 +50,10 @@ export class AudioStreamGateway implements OnGatewayConnection, OnGatewayDisconn
 	async handleDisconnect(client: Socket) {
 		this.logger.log(`✓ Client disconnected: ${client.id}`)
 
-		const sessions = Array.from(this.streamingSessions.entries())
+		await this.cacheService.clearClientCaches(client.id)
+		await this.audioService.clearAudioSession(client.id)
 
-		for (const [key, session] of sessions) {
-			if (key.startsWith(client.id)) {
-				this.streamingSessions.delete(key)
-
-				this.logger.debug(`Cleaned up session: ${key}`)
-			}
-		}
+		this.logger.debug(`[Cleanup] Session cleaned up: ${client.id}`)
 	}
 
 	@SubscribeMessage('start-stream')
@@ -73,38 +63,26 @@ export class AudioStreamGateway implements OnGatewayConnection, OnGatewayDisconn
 		data: {
 			userId: string
 			conversationId: string
+			sessionId: string
 			provider?: 'openai' | 'gemini'
 		}
 	) {
 		try {
-			const sessionKey = `${client.id}:${data.conversationId}`
+			const audioSession = await this.audioService.createAudioSession(client.id, data.sessionId, data.conversationId)
 
-			const session: StreamingSession = {
-				userId: data.userId,
-				conversationId: data.conversationId,
-				audioChunks: [],
-				isStreaming: true,
-				startTime: Date.now(),
-				provider: data.provider || 'openai',
-				totalBytes: 0
-			}
-
-			this.streamingSessions.set(sessionKey, session)
-
-			await this.sessionService.createSession(data.userId, data.conversationId)
-
-			this.logger.log(`Stream started: ${sessionKey}`)
+			this.logger.log(`[Step 1] Stream started: ${data.userId} / ${data.conversationId}`)
 
 			client.emit('stream-started', {
-				sessionKey,
+				sessionKey: client.id,
 				status: 'streaming',
 				timestamp: Date.now()
 			})
 		} catch (error) {
-			this.logger.error(`Failed to start stream: ${(error as Error).message}`)
+			this.logger.error(`Failed to start stream: ${error.message}`)
+
 			client.emit('error', {
 				code: 'STREAM_START_FAILED',
-				message: `Failed to start stream: ${(error as Error).message}`
+				message: error.message
 			})
 		}
 	}
@@ -114,219 +92,162 @@ export class AudioStreamGateway implements OnGatewayConnection, OnGatewayDisconn
 		@ConnectedSocket() client: Socket,
 		@MessageBody()
 		data: {
-			sessionKey: string
 			chunk: string
+			chunkIndex: number
 			isFinal: boolean
 		}
 	) {
 		try {
-			const session = this.streamingSessions.get(data.sessionKey)
-
-			if (!session || !session.isStreaming) {
-				client.emit('error', {
-					code: 'STREAM_INACTIVE',
-					message: 'Stream session not found or inactive'
-				})
-				return
-			}
-
-			const duration = Date.now() - session.startTime
-
-			if (duration > this.MAX_AUDIO_DURATION) {
-				session.isStreaming = false
-
-				this.logger.warn(`Max duration exceeded: ${duration}ms`)
-
-				client.emit('error', {
-					code: 'DURATION_EXCEEDED',
-					message: 'Recording duration exceeded (max 5 minutes)'
-				})
-
-				return
-			}
-
-			const audioBuffer = Buffer.from(data.chunk, 'base64')
-
-			session.audioChunks.push(audioBuffer)
-			session.totalBytes += audioBuffer.length
-
-			this.logger.debug(`Chunk received: ${audioBuffer.length} bytes (total: ${session.totalBytes})`)
+			const audioSession = await this.audioService.addAudioChunk(client.id, data.chunk, data.chunkIndex)
 
 			client.emit('chunk-received', {
-				bytesReceived: session.totalBytes,
-				duration,
+				chunkIndex: data.chunkIndex,
+				bytesReceived: audioSession.totalBytes,
+				duration: Date.now() - audioSession.startTime,
 				timestamp: Date.now()
 			})
 
 			if (data.isFinal) {
-				this.logger.log(`Final chunk received, processing audio...`)
+				this.logger.log(`[Step 6] Final chunk received, processing...`)
 
-				await this._processAudioStream(client, data.sessionKey, session)
+				await this._processAudioStream(client, client.id)
 			}
 		} catch (error) {
-			this.logger.error(`Failed to process audio chunk: ${(error as Error).message}`)
+			this.logger.error(`Failed to process chunk: ${error.message}`)
 
 			client.emit('error', {
-				code: 'CHUNK_PROCESS_FAILED',
-				message: `Failed to process audio chunk: ${(error as Error).message}`
+				code: 'CHUNK_FAILED',
+				message: error.message
 			})
 		}
 	}
 
 	@SubscribeMessage('end-stream')
-	async handleEndStream(@ConnectedSocket() client: Socket, @MessageBody() data: { sessionKey: string }) {
+	async handleEndStream(@ConnectedSocket() client: Socket, @MessageBody() data: { sessionId: string }) {
 		try {
-			const session = this.streamingSessions.get(data.sessionKey)
+			this.logger.log(`[Step 6] Stream end signal received`)
 
-			if (session) {
-				session.isStreaming = false
+			const audioFilePath = await this.audioService.saveAudioToFile(client.id)
 
-				const duration = Date.now() - session.startTime
-
-				this.logger.log(`Stream ended by user (duration: ${duration}ms)`)
-
-				await this._processAudioStream(client, data.sessionKey, session)
-			}
+			await this._processAudioStream(client, client.id)
 
 			client.emit('stream-ended', {
 				status: 'processing',
+				audioFile: audioFilePath,
 				timestamp: Date.now()
 			})
 		} catch (error) {
-			this.logger.error(`Failed to end stream: ${(error as Error).message}`)
+			this.logger.error(`Failed to end stream: ${error.message}`)
 
 			client.emit('error', {
 				code: 'STREAM_END_FAILED',
-				message: `Failed to end stream: ${(error as Error).message}`
+				message: error.message
 			})
 		}
 	}
 
 	@SubscribeMessage('cancel-stream')
-	async handleCancelStream(@ConnectedSocket() client: Socket, @MessageBody() data: { sessionKey: string }) {
+	async handleCancelStream(@ConnectedSocket() client: Socket, @MessageBody() data: { sessionId: string }) {
 		try {
-			const session = this.streamingSessions.get(data.sessionKey)
+			await this.audioService.clearAudioSession(client.id)
+			await this.cacheService.clearClientCaches(client.id)
 
-			if (session) {
-				session.isStreaming = false
-				session.audioChunks = []
-
-				this.streamingSessions.delete(data.sessionKey)
-
-				this.logger.log(`Stream cancelled by user`)
-
-				await this.sessionService.deleteSession(session.userId, session.conversationId)
-			}
+			this.logger.log(`[Cleanup] Stream cancelled: ${client.id}`)
 
 			client.emit('stream-cancelled', {
 				status: 'cancelled',
 				timestamp: Date.now()
 			})
 		} catch (error) {
-			this.logger.error(`Failed to cancel stream: ${(error as Error).message}`)
+			this.logger.error(`Failed to cancel stream: ${error.message}`)
 
 			client.emit('error', {
 				code: 'CANCEL_FAILED',
-				message: `Failed to cancel stream: ${(error as Error).message}`
+				message: error.message
 			})
 		}
 	}
 
-	private async _processAudioStream(client: Socket, sessionKey: string, session: StreamingSession) {
+	private async _processAudioStream(client: Socket, clientId: string) {
+		const startTime = Date.now()
+
 		try {
-			if (session.audioChunks.length === 0) {
-				this.logger.warn('No audio data received')
+			this.logger.log(`[Step 10] Concatenating audio chunks...`)
 
-				client.emit('error', {
-					code: 'NO_AUDIO',
-					message: 'No audio data received'
-				})
-
-				this.streamingSessions.delete(sessionKey)
-
-				return
-			}
-
-			this.logger.log(`Processing ${session.audioChunks.length} chunks (${session.totalBytes} bytes)`)
-
-			const fullAudioBuffer = Buffer.concat(session.audioChunks)
-
-			this.logger.debug(`Audio concatenated: ${fullAudioBuffer.length} bytes`)
-
-			await this.sessionService.updateSessionStatus(session.userId, session.conversationId, 'processing')
+			const fullAudioBuffer = await this.audioService.concatenateAudio(clientId)
 
 			client.emit('processing', {
 				status: 'transcribing',
 				timestamp: Date.now()
 			})
 
-			this.logger.log('Calling OpenAI Whisper STT...')
+			this.logger.log(`[Step 11] Calling Whisper STT...`)
 
-			let userMessage: string
+			let userTranscript: string
 
 			try {
-				userMessage = await this.sttService.transcribeAudioFromBuffer(fullAudioBuffer)
+				userTranscript = await this.sttService.transcribeAudioWithGemini(fullAudioBuffer)
 
-				this.logger.log(`STT Success: "${userMessage}"`)
+				this.logger.log(`[Step 11] STT Success: "${userTranscript}"`)
+
+				await this.cacheService.setUserTranscript(clientId, userTranscript)
 			} catch (sttError) {
-				this.logger.error(`STT Failed: ${(sttError as Error).message}`)
+				this.logger.error(`[Step 11] STT Failed: ${sttError.message}`)
 
 				throw {
 					code: 'STT_FAILED',
-					message: `Speech recognition failed: ${(sttError as Error).message}`
+					message: `Could not understand audio`
 				}
 			}
 
-			client.emit('transcription-complete', {
-				userMessage,
+			client.emit('user-transcript', {
+				text: userTranscript,
 				timestamp: Date.now()
 			})
-
-			this.logger.debug('Transcript sent to frontend')
-			this.logger.log('Retrieving chat history...')
-
-			const conversation = (await this.conversationService.getConversation(session.conversationId)) as any
-
-			if (!conversation) {
-				throw {
-					code: 'CONVERSATION_NOT_FOUND',
-					message: 'Conversation not found'
-				}
-			}
-
-			const messages = conversation.messages.map((msg: any) => ({
-				role: msg.role,
-				content: msg.content
-			}))
-
-			messages.push({ role: 'user', content: userMessage })
 
 			client.emit('processing', {
 				status: 'generating-response',
 				timestamp: Date.now()
 			})
 
-			this.logger.log(`Calling ${session.provider.toUpperCase()} API...`)
+			const conversationId = `temp-conv-${clientId}`
+
+			this.logger.log(`[Step 12] Retrieving chat history...`)
+
+			let messages = (await this.cacheService.getChatHistory(conversationId)) as any
+
+			if (!messages) {
+				messages = []
+			}
+
+			messages.push({
+				role: 'user',
+				content: userTranscript
+			})
+
+			this.logger.log(`[Step 13] Calling Gemini API...`)
 
 			let aiResponse: string
 
 			try {
-				const result = await this.llmService.generateResponse(messages, 'intermediate', session.provider)
+				const result = await this.llmService.generateResponse(messages, 'intermediate', 'gemini')
 
 				aiResponse = result.response
 
-				this.logger.log(`AI Response: "${aiResponse.substring(0, 50)}..."`)
+				this.logger.log(`[Step 14] AI Response: "${aiResponse.substring(0, 50)}..."`)
+
+				await this.cacheService.setAIResponse(clientId, aiResponse)
 			} catch (llmError) {
-				this.logger.error(`LLM Failed: ${(llmError as Error).message}`)
+				this.logger.error(`[Step 14] Gemini API Failed: ${llmError.message}`)
 
 				throw {
 					code: 'LLM_FAILED',
-					message: `Failed to generate response: ${(llmError as Error).message}`
+					message: `Failed to generate response`
 				}
 			}
 
-			client.emit('response-generated', {
-				aiResponse,
+			client.emit('ai-response', {
+				text: aiResponse,
 				timestamp: Date.now()
 			})
 
@@ -335,103 +256,86 @@ export class AudioStreamGateway implements OnGatewayConnection, OnGatewayDisconn
 				timestamp: Date.now()
 			})
 
-			this.logger.log('Calling OpenAI TTS API...')
+			this.logger.log(`[Step 16] Calling TTS API...`)
 
-			let audioResponseUrl: string | undefined
+			let audioUrl: string | undefined
+			let wordTimings: any[] = []
 
 			try {
 				const uploadDir = process.env.UPLOAD_DIR || './uploads'
 
-				audioResponseUrl = await this.ttsService.generateSpeechAndSave(aiResponse, uploadDir)
+				const ttsResult = await this.ttsService.synthesizeWithTimings(aiResponse, uploadDir)
 
-				this.logger.log(`Audio generated: ${audioResponseUrl}`)
+				audioUrl = ttsResult.audioUrl
+				wordTimings = ttsResult.wordTimings
+
+				await this.cacheService.setWordTimings(clientId, wordTimings)
+
+				this.logger.log(`[Step 18] Audio generated: ${ttsResult.duration}ms, ${wordTimings.length} words`)
 			} catch (ttsError) {
-				this.logger.error(`TTS Failed: ${(ttsError as Error).message}`)
-				this.logger.warn('Falling back to text-only response')
+				this.logger.warn(`[Step 16] TTS Failed: ${ttsError.message}`)
 
-				audioResponseUrl = undefined
+				audioUrl = undefined
+				wordTimings = []
 			}
 
-			this.logger.log('Saving to database...')
+			this.logger.log(`[Step 20] Saving to cache...`)
 
-			try {
-				await this.conversationService.addMessage(session.conversationId, 'user', userMessage)
+			messages.push({
+				role: 'assistant',
+				content: aiResponse
+			})
 
-				await this.conversationService.addMessage(
-					session.conversationId,
-					'assistant',
-					aiResponse,
-					undefined,
-					audioResponseUrl,
-					session.provider
-				)
+			await this.cacheService.setChatHistory(conversationId, messages)
 
-				this.logger.debug('Messages saved to database')
-			} catch (dbError) {
-				this.logger.error(`Database save failed: ${(dbError as Error).message}`)
-			}
+			const processingTime = Date.now() - startTime
 
-			await this.sessionService.updateSessionStatus(session.userId, session.conversationId, 'active')
+			this.logger.log(`[Complete] Response sent in ${processingTime}ms`)
 
 			client.emit('response-complete', {
-				userMessage,
+				userTranscript,
 				aiResponse,
-				audioUrl: audioResponseUrl,
-				provider: session.provider,
+				audioUrl,
+				wordTimings,
+				processingTime,
 				timestamp: Date.now()
 			})
 
-			this.logger.log(`Response sent to frontend`)
-
-			this.streamingSessions.delete(sessionKey)
+			await this.cacheService.setSessionState(clientId, {
+				lastExchange: Date.now(),
+				userTranscript,
+				aiResponse,
+				audioUrl
+			})
 		} catch (error) {
-			this.logger.error(`${(error as Error as any)?.code || 'UNKNOWN'}: ${(error as Error).message}`)
-
-			try {
-				await this.sessionService.updateSessionStatus(session.userId, session.conversationId, 'idle')
-			} catch (e) {
-				this.logger.error(`Failed to update session status: ${(e as Error).message}`)
-			}
+			this.logger.error(`[Error] ${error.code}: ${error.message}`)
 
 			client.emit('error', {
-				code: (error as Error as any).code || 'PROCESSING_FAILED',
-				message: (error as Error as any).message || 'Failed to process audio stream',
+				code: error.code || 'PROCESSING_FAILED',
+				message: error.message,
 				timestamp: Date.now()
 			})
 
-			this.streamingSessions.delete(sessionKey)
+			await this.audioService.clearAudioSession(clientId)
 		}
 	}
 
 	@SubscribeMessage('get-session-info')
-	async handleGetSessionInfo(@ConnectedSocket() client: Socket, @MessageBody() data: { sessionKey: string }) {
+	async handleGetSessionInfo(@ConnectedSocket() client: Socket, @MessageBody() data: { sessionId: string }) {
 		try {
-			const session = this.streamingSessions.get(data.sessionKey)
-
-			if (!session) {
-				client.emit('error', {
-					code: 'SESSION_NOT_FOUND',
-					message: 'Session not found'
-				})
-
-				return
-			}
+			const audioSession = await this.audioService.getAudioSession(client.id)
+			const sessionState = await this.cacheService.getSessionState(client.id)
 
 			client.emit('session-info', {
-				sessionKey: data.sessionKey,
-				userId: session.userId,
-				conversationId: session.conversationId,
-				isStreaming: session.isStreaming,
-				audioSize: session.totalBytes,
-				duration: Date.now() - session.startTime,
+				audioSession,
+				sessionState,
 				timestamp: Date.now()
 			})
 		} catch (error) {
-			this.logger.error(`Failed to get session info: ${(error as Error).message}`)
-
+			this.logger.error(`Failed to get session info: ${error.message}`)
 			client.emit('error', {
 				code: 'SESSION_INFO_FAILED',
-				message: `Failed to get session info: ${(error as Error).message}`
+				message: error.message
 			})
 		}
 	}

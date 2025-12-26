@@ -2,10 +2,10 @@ import { RedisModule } from '@liaoliaots/nestjs-redis'
 import { Module } from '@nestjs/common'
 import { ConfigModule } from '@nestjs/config'
 import { RouterModule } from '@nestjs/core'
-import { TypeOrmModule } from '@nestjs/typeorm'
-import { getDatabaseConfig, getDatabaseModels } from '../config/postgres.config'
 import { getRedisConfig } from '../config/redis.config'
 import { AudioStreamGateway } from '../gateways/audio-stream.gateway'
+import { AudioService } from '../services/audio.service'
+import { CacheService } from '../services/cache.service'
 import { LlmService } from '../services/llm.service'
 import { SessionService } from '../services/session.service'
 import { STTService } from '../services/speech-to-text.service'
@@ -46,13 +46,11 @@ import { HealthModule } from './health.module'
 			}
 		]),
 		RedisModule.forRoot(getRedisConfig()),
-		// TypeOrmModule.forRoot(getDatabaseConfig()),
-		// TypeOrmModule.forFeature(getDatabaseModels()),
 		ChatModule,
 		AudioModule,
 		HealthModule,
 		ConversationModule
 	],
-	providers: [AudioStreamGateway, STTService, TTSService, LlmService, SessionService]
+	providers: [AudioStreamGateway, STTService, TTSService, LlmService, SessionService, CacheService, AudioService]
 })
 export class AppModule {}

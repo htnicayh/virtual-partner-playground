@@ -1,0 +1,665 @@
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="UTF-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+		<title>Audio Stream Test - Microphone</title>
+		<script src="https://cdn.socket.io/4.8.2/socket.io.min.js"></script>
+		<style>
+			* {
+				margin: 0;
+				padding: 0;
+				box-sizing: border-box;
+			}
+
+			body {
+				font-family:
+					-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu', 'Cantarell', 'Fira Sans',
+					'Droid Sans', 'Helvetica Neue', sans-serif;
+				background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+				min-height: 100vh;
+				display: flex;
+				align-items: center;
+				justify-content: center;
+				padding: 20px;
+			}
+
+			.container {
+				background: white;
+				border-radius: 12px;
+				box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+				max-width: 600px;
+				width: 100%;
+				padding: 40px;
+			}
+
+			h1 {
+				text-align: center;
+				color: #333;
+				margin-bottom: 10px;
+				font-size: 28px;
+			}
+
+			.subtitle {
+				text-align: center;
+				color: #666;
+				margin-bottom: 30px;
+				font-size: 14px;
+			}
+
+			.status {
+				background: #f5f5f5;
+				border-left: 4px solid #667eea;
+				padding: 12px 15px;
+				margin-bottom: 20px;
+				border-radius: 4px;
+				font-size: 14px;
+			}
+
+			.status.connected {
+				border-left-color: #4caf50;
+				background: #e8f5e9;
+			}
+
+			.status.disconnected {
+				border-left-color: #f44336;
+				background: #ffebee;
+			}
+
+			.status.recording {
+				border-left-color: #ff9800;
+				background: #fff3e0;
+			}
+
+			.status.processing {
+				border-left-color: #2196f3;
+				background: #e3f2fd;
+			}
+
+			.status-text {
+				font-weight: 600;
+				color: #333;
+			}
+
+			.controls {
+				display: flex;
+				gap: 10px;
+				margin-bottom: 30px;
+				flex-wrap: wrap;
+			}
+
+			button {
+				flex: 1;
+				min-width: 120px;
+				padding: 12px 20px;
+				border: none;
+				border-radius: 6px;
+				font-size: 14px;
+				font-weight: 600;
+				cursor: pointer;
+				transition: all 0.3s ease;
+			}
+
+			button:hover {
+				transform: translateY(-2px);
+				box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+			}
+
+			button:disabled {
+				opacity: 0.5;
+				cursor: not-allowed;
+				transform: none;
+			}
+
+			.btn-primary {
+				background: #667eea;
+				color: white;
+			}
+
+			.btn-primary:hover:not(:disabled) {
+				background: #5568d3;
+			}
+
+			.btn-danger {
+				background: #f44336;
+				color: white;
+			}
+
+			.btn-danger:hover:not(:disabled) {
+				background: #da190b;
+			}
+
+			.btn-success {
+				background: #4caf50;
+				color: white;
+			}
+
+			.btn-success:hover:not(:disabled) {
+				background: #388e3c;
+			}
+
+			.info-section {
+				margin-bottom: 25px;
+			}
+
+			.section-title {
+				font-size: 12px;
+				font-weight: 700;
+				text-transform: uppercase;
+				color: #999;
+				margin-bottom: 8px;
+				letter-spacing: 0.5px;
+			}
+
+			.transcript-box,
+			.response-box,
+			.timings-box {
+				background: #f9f9f9;
+				border: 1px solid #e0e0e0;
+				border-radius: 6px;
+				padding: 12px;
+				min-height: 60px;
+				max-height: 120px;
+				overflow-y: auto;
+				font-size: 13px;
+				line-height: 1.5;
+				color: #333;
+			}
+
+			.empty-text {
+				color: #999;
+				font-style: italic;
+			}
+
+			.processing-indicator {
+				display: none;
+				text-align: center;
+				padding: 20px;
+				color: #667eea;
+			}
+
+			.processing-indicator.active {
+				display: block;
+			}
+
+			.spinner {
+				display: inline-block;
+				width: 20px;
+				height: 20px;
+				border: 3px solid #f3f3f3;
+				border-top: 3px solid #667eea;
+				border-radius: 50%;
+				animation: spin 1s linear infinite;
+			}
+
+			@keyframes spin {
+				0% {
+					transform: rotate(0deg);
+				}
+				100% {
+					transform: rotate(360deg);
+				}
+			}
+
+			.metrics {
+				display: grid;
+				grid-template-columns: 1fr 1fr;
+				gap: 10px;
+				margin-top: 15px;
+			}
+
+			.metric {
+				background: #f5f5f5;
+				padding: 10px;
+				border-radius: 4px;
+				text-align: center;
+				font-size: 12px;
+			}
+
+			.metric-value {
+				font-size: 16px;
+				font-weight: 700;
+				color: #667eea;
+			}
+
+			.metric-label {
+				color: #999;
+				margin-top: 3px;
+			}
+
+			.log-container {
+				background: #1e1e1e;
+				color: #d4d4d4;
+				border-radius: 6px;
+				padding: 12px;
+				font-family: 'Courier New', monospace;
+				font-size: 11px;
+				max-height: 200px;
+				overflow-y: auto;
+				margin-top: 20px;
+			}
+
+			.log-entry {
+				padding: 3px 0;
+				border-bottom: 1px solid #333;
+			}
+
+			.log-entry:last-child {
+				border-bottom: none;
+			}
+
+			.log-time {
+				color: #858585;
+			}
+
+			.log-message {
+				color: #d4d4d4;
+			}
+
+			.log-error {
+				color: #f48771;
+			}
+
+			.log-success {
+				color: #89d185;
+			}
+
+			.audio-visualization {
+				display: none;
+				margin-bottom: 20px;
+			}
+
+			.audio-visualization.active {
+				display: block;
+			}
+
+			canvas {
+				width: 100%;
+				height: 100px;
+				border: 1px solid #e0e0e0;
+				border-radius: 6px;
+				background: #f9f9f9;
+			}
+		</style>
+	</head>
+	<body>
+		<div class="container">
+			<h1>🎤 Audio Stream Test</h1>
+			<p class="subtitle">Test microphone & WebSocket connection</p>
+
+			<div class="status disconnected" id="status">
+				<span class="status-text" id="statusText">Disconnected</span>
+			</div>
+
+			<div class="controls">
+				<button class="btn-success" id="connectBtn" onclick="connect()">Connect</button>
+				<button class="btn-primary" id="recordBtn" onclick="startRecording()" disabled>Record</button>
+				<button class="btn-danger" id="stopBtn" onclick="stopRecording()" disabled>Stop</button>
+				<button class="btn-danger" id="cancelBtn" onclick="cancelStream()" disabled>Cancel</button>
+			</div>
+
+			<div class="audio-visualization" id="visualization">
+				<div class="section-title">Audio Waveform</div>
+				<canvas id="audioCanvas"></canvas>
+			</div>
+
+			<div class="processing-indicator" id="processing">
+				<div class="spinner"></div>
+				<p id="processingText" style="margin-top: 10px; font-size: 13px"></p>
+			</div>
+
+			<div class="info-section">
+				<div class="section-title">Your Transcription</div>
+				<div class="transcript-box" id="transcript">
+					<span class="empty-text">Waiting for audio...</span>
+				</div>
+			</div>
+
+			<div class="info-section">
+				<div class="section-title">AI Response</div>
+				<div class="response-box" id="response">
+					<span class="empty-text">Waiting for response...</span>
+				</div>
+			</div>
+
+			<div class="info-section">
+				<div class="section-title">Processing Metrics</div>
+				<div class="metrics">
+					<div class="metric">
+						<div class="metric-value" id="bytesMetric">0</div>
+						<div class="metric-label">Bytes Sent</div>
+					</div>
+					<div class="metric">
+						<div class="metric-value" id="chunksMetric">0</div>
+						<div class="metric-label">Chunks Sent</div>
+					</div>
+					<div class="metric">
+						<div class="metric-value" id="timeMetric">0ms</div>
+						<div class="metric-label">Processing Time</div>
+					</div>
+					<div class="metric">
+						<div class="metric-value" id="recordTimeMetric">0s</div>
+						<div class="metric-label">Recording Time</div>
+					</div>
+				</div>
+			</div>
+
+			<div class="log-container" id="logs"></div>
+		</div>
+
+		<script>
+			let socket = null
+			let mediaStream = null
+			let mediaRecorder = null
+			let audioChunks = []
+			let isRecording = false
+			let recordingStartTime = null
+			let recordingInterval = null
+			let totalBytesSent = 0
+			let chunksSent = 0
+			let analyser = null
+			let dataArray = null
+			let canvas = null
+			let canvasCtx = null
+			let animationId = null
+
+			const SERVER_URL = 'ws://localhost:3000'
+			const CHUNK_SIZE = 8192
+
+			function log(message, type = 'message') {
+				const logsContainer = document.getElementById('logs')
+				const entry = document.createElement('div')
+				entry.className = 'log-entry'
+
+				const time = new Date().toLocaleTimeString('en-US', {
+					hour12: false,
+					hour: '2-digit',
+					minute: '2-digit',
+					second: '2-digit'
+				})
+
+				let html = `<span class="log-time">${time}</span> `
+
+				if (type === 'error') {
+					html += `<span class="log-error">❌ ${message}</span>`
+				} else if (type === 'success') {
+					html += `<span class="log-success">✓ ${message}</span>`
+				} else {
+					html += `<span class="log-message">→ ${message}</span>`
+				}
+
+				entry.innerHTML = html
+				logsContainer.appendChild(entry)
+				logsContainer.scrollTop = logsContainer.scrollHeight
+			}
+
+			function updateStatus(text, type) {
+				const statusEl = document.getElementById('status')
+				const statusText = document.getElementById('statusText')
+
+				statusEl.className = `status ${type}`
+				statusText.textContent = text
+			}
+
+			function updateMetrics() {
+				document.getElementById('bytesMetric').textContent = (totalBytesSent / 1024).toFixed(2) + ' KB'
+				document.getElementById('chunksMetric').textContent = chunksSent
+
+				if (recordingStartTime) {
+					const elapsed = ((Date.now() - recordingStartTime) / 1000).toFixed(1)
+					document.getElementById('recordTimeMetric').textContent = elapsed + 's'
+				}
+			}
+
+			function showProcessing(text) {
+				const processing = document.getElementById('processing')
+				document.getElementById('processingText').textContent = text
+				processing.classList.add('active')
+			}
+
+			function hideProcessing() {
+				document.getElementById('processing').classList.remove('active')
+			}
+
+			async function connect() {
+				try {
+					updateStatus('Connecting...', 'processing')
+					log('Attempting to connect to server...')
+
+					socket = io(SERVER_URL + '/audio', {
+						reconnection: true,
+						reconnectionDelay: 1000,
+						reconnectionDelayMax: 5000,
+						reconnectionAttempts: 5
+					})
+
+					socket.on('connect', () => {
+						updateStatus('Connected', 'connected')
+						log('Connected to server', 'success')
+						document.getElementById('connectBtn').disabled = true
+						document.getElementById('recordBtn').disabled = false
+					})
+
+					socket.on('disconnect', () => {
+						updateStatus('Disconnected', 'disconnected')
+						log('Disconnected from server', 'error')
+						document.getElementById('connectBtn').disabled = false
+						document.getElementById('recordBtn').disabled = true
+						document.getElementById('stopBtn').disabled = true
+						isRecording = false
+					})
+
+					socket.on('stream-started', (data) => {
+						log('Stream started', 'success')
+						showProcessing('Recording audio...')
+					})
+
+					socket.on('chunk-received', (data) => {
+						log(`Chunk ${data.chunkIndex} acknowledged`)
+					})
+
+					socket.on('user-transcript', (data) => {
+						document.getElementById('transcript').textContent = data.text
+						log('Transcription received', 'success')
+					})
+
+					socket.on('processing', (data) => {
+						showProcessing(`Processing: ${data.status}`)
+						log(`Status: ${data.status}`)
+					})
+
+					socket.on('ai-response', (data) => {
+						document.getElementById('response').textContent = data.text
+						log('AI response received', 'success')
+					})
+
+					socket.on('response-complete', (data) => {
+						hideProcessing()
+						document.getElementById('timeMetric').textContent = data.processingTime + 'ms'
+						log(`Complete in ${data.processingTime}ms`, 'success')
+						updateMetrics()
+						stopVisualization()
+					})
+
+					socket.on('error', (data) => {
+						log(`Error: ${data.message}`, 'error')
+						hideProcessing()
+						updateStatus('Error', 'disconnected')
+					})
+
+					socket.on('stream-cancelled', () => {
+						log('Stream cancelled', 'error')
+						hideProcessing()
+						updateStatus('Connected', 'connected')
+						isRecording = false
+						document.getElementById('recordBtn').disabled = false
+						document.getElementById('stopBtn').disabled = true
+						document.getElementById('cancelBtn').disabled = true
+						stopVisualization()
+					})
+				} catch (error) {
+					log(`Connection error: ${error.message}`, 'error')
+					updateStatus('Connection Failed', 'disconnected')
+				}
+			}
+
+			async function startRecording() {
+				try {
+					log('Requesting microphone access...')
+
+					mediaStream = await navigator.mediaDevices.getUserMedia({
+						audio: {
+							sampleRate: 16000,
+							echoCancellation: true,
+							noiseSuppression: true
+						}
+					})
+
+					log('Microphone access granted', 'success')
+
+					const audioContext = new (window.AudioContext || window.webkitAudioContext)()
+					const source = audioContext.createMediaStreamSource(mediaStream)
+					analyser = audioContext.createAnalyser()
+					analyser.fftSize = 256
+					source.connect(analyser)
+
+					const bufferLength = analyser.frequencyBinCount
+					dataArray = new Uint8Array(bufferLength)
+
+					startVisualization()
+
+					mediaRecorder = new MediaRecorder(mediaStream)
+					audioChunks = []
+					totalBytesSent = 0
+					chunksSent = 0
+
+					mediaRecorder.ondataavailable = async (event) => {
+						if (event.data.size > 0) {
+							const buffer = await event.data.arrayBuffer()
+							const uint8Array = new Uint8Array(buffer)
+
+							const base64 = btoa(String.fromCharCode.apply(null, uint8Array))
+
+							socket.emit('audio-chunk', {
+								chunk: base64,
+								chunkIndex: chunksSent,
+								isFinal: false
+							})
+
+							totalBytesSent += uint8Array.length
+							chunksSent++
+							updateMetrics()
+						}
+					}
+
+					mediaRecorder.start(100)
+
+					recordingStartTime = Date.now()
+					recordingInterval = setInterval(updateMetrics, 100)
+
+					isRecording = true
+					updateStatus('Recording', 'recording')
+					log('Recording started', 'success')
+
+					document.getElementById('recordBtn').disabled = true
+					document.getElementById('stopBtn').disabled = false
+					document.getElementById('cancelBtn').disabled = false
+
+					socket.emit('start-stream', {
+						userId: 'test-user-' + Math.random().toString(36).substr(2, 9),
+						conversationId: 'conv-' + Date.now(),
+						sessionId: 'session-' + Date.now(),
+						provider: 'gemini'
+					})
+				} catch (error) {
+					log(`Microphone error: ${error.message}`, 'error')
+					updateStatus('Microphone Error', 'disconnected')
+				}
+			}
+
+			async function stopRecording() {
+				if (!mediaRecorder || !isRecording) return
+
+				try {
+					mediaRecorder.stop()
+
+					mediaRecorder.onstop = async () => {
+						const blob = new Blob(audioChunks, { type: 'audio/wav' })
+						const buffer = await blob.arrayBuffer()
+						const uint8Array = new Uint8Array(buffer)
+
+						const base64 = btoa(String.fromCharCode.apply(null, uint8Array))
+
+						socket.emit('audio-chunk', {
+							chunk: base64,
+							chunkIndex: chunksSent,
+							isFinal: true
+						})
+
+						chunksSent++
+						updateMetrics()
+						log('Final chunk sent', 'success')
+					}
+
+					clearInterval(recordingInterval)
+					mediaStream.getTracks().forEach((track) => track.stop())
+
+					isRecording = false
+					updateStatus('Processing', 'processing')
+					log('Recording stopped', 'success')
+
+					document.getElementById('recordBtn').disabled = false
+					document.getElementById('stopBtn').disabled = true
+				} catch (error) {
+					log(`Stop recording error: ${error.message}`, 'error')
+				}
+			}
+
+			function cancelStream() {
+				if (socket && isRecording) {
+					socket.emit('cancel-stream', { sessionId: 'test' })
+					log('Cancel request sent', 'message')
+				}
+			}
+
+			function startVisualization() {
+				canvas = document.getElementById('audioCanvas')
+				canvasCtx = canvas.getContext('2d')
+				document.getElementById('visualization').classList.add('active')
+
+				// Set canvas size
+				canvas.width = canvas.offsetWidth
+				canvas.height = canvas.offsetHeight
+
+				function draw() {
+					animationId = requestAnimationFrame(draw)
+
+					analyser.getByteFrequencyData(dataArray)
+
+					canvasCtx.fillStyle = '#f9f9f9'
+					canvasCtx.fillRect(0, 0, canvas.width, canvas.height)
+
+					const barWidth = (canvas.width / dataArray.length) * 2.5
+					let x = 0
+
+					canvasCtx.fillStyle = '#667eea'
+					for (let i = 0; i < dataArray.length; i++) {
+						const barHeight = (dataArray[i] / 255) * canvas.height
+
+						canvasCtx.fillRect(x, canvas.height - barHeight, barWidth - 1, barHeight)
+						x += barWidth + 1
+					}
+				}
+
+				draw()
+			}
+
+			function stopVisualization() {
+				if (animationId) {
+					cancelAnimationFrame(animationId)
+				}
+				document.getElementById('visualization').classList.remove('active')
+			}
+		</script>
+	</body>
+</html>

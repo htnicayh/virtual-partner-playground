@@ -71,7 +71,10 @@ Keep responses conversational and encouraging.`
 					maxOutputTokens: 500,
 					temperature: 0.7
 				},
-				systemInstruction: systemMessage
+				systemInstruction: {
+					role: 'user',
+					parts: [{ text: systemMessage }]
+				}
 			})
 
 			const result = await chat.sendMessage(formattedMessages[formattedMessages.length - 1].parts[0].text)

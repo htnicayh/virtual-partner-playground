@@ -16,6 +16,7 @@
     "test:cov": "jest --coverage"
   },
   "dependencies": {
+    "@google/genai": "^1.34.0",
     "@google/generative-ai": "^0.24.1",
     "@liaoliaots/nestjs-redis": "^9.1.0-next.2",
     "@nestjs/axios": "^4.0.1",
@@ -39,7 +40,8 @@
     "socket.io": "^4.8.2",
     "socket.io-client": "^4.8.3",
     "typeorm": "^0.3.28",
-    "uuid": "^13.0.0"
+    "uuid": "^13.0.0",
+    "wav": "^1.0.2"
   },
   "devDependencies": {
     "@eslint/eslintrc": "^3.2.0",
@@ -53,6 +55,7 @@
     "@types/multer": "^2.0.0",
     "@types/node": "^22.10.7",
     "@types/supertest": "^6.0.2",
+    "@types/wav": "^1.0.4",
     "eslint": "^9.18.0",
     "eslint-config-prettier": "^10.0.1",
     "eslint-plugin-prettier": "^5.2.2",
