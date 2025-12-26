@@ -25,28 +25,26 @@ import { TTSService } from '../services/text-to-speech.service'
 })
 @Injectable()
 export class AudioStreamGateway implements OnGatewayConnection, OnGatewayDisconnect {
+	private readonly logger = new Logger(AudioStreamGateway.name)
+
 	@WebSocketServer()
 	server: Server
 
-	private readonly logger = new Logger(AudioStreamGateway.name)
 	private streamingSessions = new Map<string, StreamingSession>()
 
 	private readonly MAX_AUDIO_DURATION = 300000
-	private readonly AUDIO_CHUNK_SIZE = 65536
-	private readonly SILENCE_THRESHOLD = -40
-	private readonly SILENCE_DURATION = 1000
 
 	constructor(
-		private sttService: STTService,
-		private ttsService: TTSService,
-		private llmService: LlmService,
-		private conversationService: ConversationService,
-		private sessionService: SessionService
+		private readonly sttService: STTService,
+		private readonly ttsService: TTSService,
+		private readonly llmService: LlmService,
+		private readonly conversationService: ConversationService,
+		private readonly sessionService: SessionService
 	) {}
 
 	async handleConnection(client: Socket) {
 		this.logger.log(`✓ Client connected: ${client.id}`)
-		
+
 		client.emit('connection', {
 			status: 'connected',
 			socketId: client.id,
