@@ -1,17 +1,17 @@
-# 🎓 Virtual English Partner - Backend
+# Virtual English Partner - Backend
 
 A WebSocket-based backend server for practicing English with an AI tutor using OpenAI GPT, Whisper STT, and TTS.
 
-## ✨ Features
+## Features
 
-- 💬 **Text Chat** - Real-time conversations with AI English tutor
-- 🎤 **Voice Support** - Speech-to-text (Whisper), text-to-speech (TTS)
-- 📚 **Conversation History** - Track and retrieve chat history
-- 🔄 **WebSocket Real-time** - Socket.io for instant communication
-- 📊 **Token Tracking** - Monitor API usage and costs
-- 🎯 **Adaptive Learning** - AI adjusts to your English level
+- **Text Chat** - Real-time conversations with AI English tutor
+- **Voice Support** - Speech-to-text (Whisper), text-to-speech (TTS)
+- **Conversation History** - Track and retrieve chat history
+- **WebSocket Real-time** - Socket.io for instant communication
+- **Token Tracking** - Monitor API usage and costs
+- **Adaptive Learning** - AI adjusts to your English level
 
-## 🚀 Quick Start
+## Quick Start
 
 ### 1. Prerequisites
 
@@ -53,11 +53,134 @@ bun start
 
 Server runs on `http://localhost:3000`
 
-## 📡 WebSocket API
+## WebSocket API
 
-### Events
+### Audio Stream Flow
 
-#### Text Message
+The audio streaming gateway handles real-time voice communication through WebSocket:
+
+#### 1. Start Stream Session
+
+```javascript
+socket.emit('start-stream', {
+	userId: 'user-id',
+	conversationId: 'conversation-uuid',
+	provider: 'openai' // or 'gemini'
+})
+
+socket.on('stream-started', {
+	sessionKey: 'socket-id:conversation-id',
+	status: 'streaming',
+	timestamp: Date.now()
+})
+```
+
+#### 2. Send Audio Chunks
+
+```javascript
+// Send WebM/Opus encoded audio chunks
+socket.emit('audio-chunk', {
+	sessionKey: 'socket-id:conversation-id',
+	chunk: 'base64-encoded-audio',
+	isFinal: false
+})
+
+socket.on('chunk-received', {
+	bytesReceived: 65536,
+	duration: 500,
+	timestamp: Date.now()
+})
+```
+
+#### 3. Process Complete Audio
+
+```javascript
+// Mark final chunk or explicitly end stream
+socket.emit('audio-chunk', {
+	sessionKey: 'socket-id:conversation-id',
+	chunk: 'base64-encoded-audio',
+	isFinal: true
+})
+
+// Or use end-stream event
+socket.emit('end-stream', {
+	sessionKey: 'socket-id:conversation-id'
+})
+
+socket.on('stream-ended', {
+	status: 'processing',
+	timestamp: Date.now()
+})
+```
+
+#### 4. Audio Processing Pipeline
+
+The gateway executes the following sequence:
+
+1. **Transcription** (STT)
+   - Concatenate all audio chunks
+   - Call Whisper API for speech-to-text
+   - Emit transcribed text to client
+
+2. **AI Response Generation** (LLM)
+   - Retrieve conversation history
+   - Send messages to OpenAI/Gemini API
+   - Generate AI response
+
+3. **Text-to-Speech** (TTS)
+   - Convert AI response to audio
+   - Save audio file
+   - Return audio URL
+
+4. **Database Storage**
+   - Save user message to database
+   - Save AI response with audio URL
+   - Update conversation history
+
+#### 5. Complete Response
+
+```javascript
+socket.on('response-complete', {
+	userMessage: 'What user said',
+	aiResponse: 'AI response text',
+	audioUrl: 'https://..../audio.mp3',
+	provider: 'openai',
+	timestamp: Date.now()
+})
+```
+
+#### 6. Cancel Stream
+
+```javascript
+socket.emit('cancel-stream', {
+	sessionKey: 'socket-id:conversation-id'
+})
+
+socket.on('stream-cancelled', {
+	status: 'cancelled',
+	timestamp: Date.now()
+})
+```
+
+#### 7. Session Info
+
+```javascript
+socket.emit('get-session-info', {
+	sessionKey: 'socket-id:conversation-id'
+})
+
+socket.on('session-info', {
+	sessionKey: 'socket-id:conversation-id',
+	userId: 'user-id',
+	conversationId: 'conversation-uuid',
+	isStreaming: true,
+	audioSize: 65536,
+	duration: 2500,
+	timestamp: Date.now()
+})
+```
+
+### Text Message Events (Deprecated)
 
 ```javascript
 socket.emit('text-message', {
@@ -74,25 +197,7 @@ socket.on('text-response', {
 })
 ```
 
-#### Voice Message
-
-```javascript
-socket.emit('voice-message', {
-  audioBase64: 'base64_audio_data',
-  conversationId: 'optional-uuid'
-})
-
-socket.on('voice-response', {
-  userTranscription: 'What user said',
-  aiMessage: 'AI response',
-  audioBase64: 'base64_audio',
-  conversationId: 'uuid',
-  messageId: 'uuid',
-  metadata: { ... }
-})
-```
-
-#### Get History
+### Get History
 
 ```javascript
 socket.emit('get-conversation-history', {
@@ -106,40 +211,55 @@ socket.on('conversation-history', {
 })
 ```
 
-## 🏗️ Architecture
+## Architecture
+
+The backend uses a modular architecture with WebSocket-based real-time communication:
 
 ```
-ChatGateway (WebSocket)
+AudioStreamGateway (WebSocket /audio)
     ↓
-ChatService (Business Logic)
-    ├── OpenaiService (GPT, STT, TTS)
-    └── ConversationService (Message Storage)
+├── SessionService (Session management)
+├── STTService (Speech-to-Text)
+├── LLMService (AI Response Generation)
+├── TTSService (Text-to-Speech)
+└── ConversationService (Message Storage)
 ```
 
-## 📁 Project Structure
+## Project Structure
 
 ```
 src/
 ├── main.ts
-├── app.module.ts
-├── chat/
-│   ├── chat.gateway.ts
-│   ├── chat.service.ts
-│   ├── chat.module.ts
-│   └── dtos/
-│       └── chat.dtos.ts
-├── conversation/
-│   ├── conversation.service.ts
-│   ├── conversation.module.ts
-│   └── entities/
-│       ├── conversation.entity.ts
-│       └── message.entity.ts
-└── openai/
-    ├── openai.service.ts
-    └── openai.module.ts
+├── config/
+│   ├── gemini.config.ts
+│   ├── openai.config.ts
+│   ├── postgres.config.ts
+│   └── redis.config.ts
+├── controllers/
+│   ├── audio.controller.ts
+│   ├── chat.controller.ts
+│   ├── conversation.controller.ts
+│   └── health.controller.ts
+├── dtos/
+├── gateways/
+│   └── audio-stream.gateway.ts
+├── models/
+│   ├── conversation.model.ts
+│   ├── message.model.ts
+│   ├── session.model.ts
+│   └── user.model.ts
+├── modules/
+│   ├── app.module.ts
+│   └── health.module.ts
+└── services/
+    ├── conversation.service.ts
+    ├── llm.service.ts
+    ├── session.service.ts
+    ├── speech-to-text.service.ts
+    └── text-to-speech.service.ts
 ```
 
-## 🔧 Configuration
+## Configuration
 
 ### Environment Variables
 
@@ -166,7 +286,7 @@ OPENAI_TTS_VOICE=nova
 
 - `alloy`, `echo`, `fable`, `nova`, `onyx`, `shimmer`
 
-## 💰 Costs
+## Costs
 
 Typical per conversation:
 
@@ -174,9 +294,9 @@ Typical per conversation:
 - Whisper STT: ~$0.003 per 15 sec
 - TTS: ~$0.0000016 per 100 chars
 
-**Total: ~$0.003 per minute** ✅ Very affordable!
+**Total: ~$0.003 per minute** - Very affordable!
 
-## 🧪 Testing
+## Testing
 
 ### Browser Console
 
@@ -199,7 +319,7 @@ bun i socket.io-client
 node test-client.js
 ```
 
-## 🔍 Debugging
+## Debugging
 
 ### Enable Debug Logs
 
@@ -214,7 +334,7 @@ DEBUG=* bun run dev
 - Token usage
 - API errors
 
-## 📚 Next Steps
+## Next Steps
 
 - [ ] Add database (PostgreSQL)
 - [ ] Authentication (JWT)
@@ -224,7 +344,7 @@ DEBUG=* bun run dev
 - [ ] Rate limiting
 - [ ] Error tracking
 
-## 📝 System Prompt
+## System Prompt
 
 The AI is configured as an English conversation partner that:
 
@@ -235,7 +355,7 @@ The AI is configured as an English conversation partner that:
 - Adapts to user's level
 - Provides explanations
 
-## 🐛 Troubleshooting
+## Troubleshooting
 
 ### "OPENAI_API_KEY not set"
 
@@ -257,7 +377,7 @@ Verify key from https://platform.openai.com/api-keys
 - Sufficient audio duration
 - Clear audio quality
 
-## 📖 Resources
+## Resources
 
 - [NestJS Docs](https://docs.nestjs.com)
 - [Socket.io Docs](https://socket.io/docs/)
