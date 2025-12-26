@@ -46,8 +46,8 @@ import { HealthModule } from './health.module'
 			}
 		]),
 		RedisModule.forRoot(getRedisConfig()),
-		TypeOrmModule.forRoot(getDatabaseConfig()),
-		TypeOrmModule.forFeature(getDatabaseModels()),
+		// TypeOrmModule.forRoot(getDatabaseConfig()),
+		// TypeOrmModule.forFeature(getDatabaseModels()),
 		ChatModule,
 		AudioModule,
 		HealthModule,
