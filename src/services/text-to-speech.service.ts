@@ -151,7 +151,7 @@ export class TTSService {
 				throw new Error('No audio data in Gemini response')
 			}
 
-			const dataUrl = `data:audio/mpeg;base64,${audioData}`
+			const dataUrl = `data:audio/mp3;base64,${audioData}`
 
 			this.logger.log(`Gemini Audio encoded to Base64: ${audioData.length} chars`)
 

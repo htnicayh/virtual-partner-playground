@@ -25,8 +25,7 @@ async function bootstrap() {
 
 	const uploadDir = process.env.UPLOAD_DIR || './uploads'
 
-	app.use('/uploads', express.static(path.join(__dirname, '..', uploadDir)))
-	app.setGlobalPrefix(GLOBAL_PREFIX)
+	app.use('/uploads', express.static(path.resolve(process.cwd(), uploadDir)))
 
 	const port = process.env.PORT || 3000
 

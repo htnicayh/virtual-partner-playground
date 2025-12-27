@@ -14,6 +14,7 @@ import { AudioModule } from './audio.module'
 import { ChatModule } from './chat.module'
 import { ConversationModule } from './conversation.module'
 import { HealthModule } from './health.module'
+import { LogModule } from './log.module'
 
 @Module({
 	imports: [
@@ -23,7 +24,7 @@ import { HealthModule } from './health.module'
 		}),
 		RouterModule.register([
 			{
-				path: '/',
+				path: '/api',
 				module: AppModule,
 				children: [
 					{
@@ -43,9 +44,14 @@ import { HealthModule } from './health.module'
 			{
 				path: '/health',
 				module: HealthModule
+			},
+			{
+				path: '/logs',
+				module: LogModule
 			}
 		]),
 		RedisModule.forRoot(getRedisConfig()),
+		LogModule,
 		ChatModule,
 		AudioModule,
 		HealthModule,

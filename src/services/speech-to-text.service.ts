@@ -36,10 +36,10 @@ export class STTService {
 			this.logger.log(`[Whisper] Transcription complete: "${transcript.text.substring(0, 50)}..."`)
 
 			return transcript.text
-		} catch (error) {
-			this.logger.error(`[Whisper] Transcription failed: ${(error as Error).message}`)
+		} catch (e) {
+			this.logger.error(`[Whisper] Transcription failed: ${(e as Error).message}`)
 
-			throw new Error(`Whisper STT failed: ${(error as Error).message}`)
+			throw new Error(`Whisper STT failed: ${(e as Error).message}`)
 		}
 	}
 
@@ -56,10 +56,10 @@ export class STTService {
 			this.logger.log(`[Whisper] Transcription complete: "${transcript.text.substring(0, 50)}..."`)
 
 			return transcript.text
-		} catch (error) {
-			this.logger.error(`[Whisper] Transcription failed: ${(error as Error).message}`)
+		} catch (e) {
+			this.logger.error(`[Whisper] Transcription failed: ${(e as Error).message}`)
 
-			throw new Error(`Whisper STT failed: ${(error as Error).message}`)
+			throw new Error(`Whisper STT failed: ${(e as Error).message}`)
 		}
 	}
 
@@ -86,10 +86,10 @@ export class STTService {
 				text: transcript.text,
 				confidence: confidenceEstimate
 			}
-		} catch (error) {
-			this.logger.error(`[Whisper] Transcription failed: ${(error as Error).message}`)
+		} catch (e) {
+			this.logger.error(`[Whisper] Transcription failed: ${(e as Error).message}`)
 
-			throw new Error(`Whisper STT failed: ${(error as Error).message}`)
+			throw new Error(`Whisper STT failed: ${(e as Error).message}`)
 		}
 	}
 
@@ -127,10 +127,10 @@ export class STTService {
 			this.logger.log(`[Gemini Audio] Transcription complete: "${transcript.substring(0, 50)}..."`)
 
 			return transcript.trim()
-		} catch (error) {
-			this.logger.error(`[Gemini Audio] Transcription failed: ${(error as Error).message}`)
+		} catch (e) {
+			this.logger.error(`[Gemini Audio] Transcription failed: ${(e as Error).message}`)
 
-			throw new Error(`Gemini Audio STT failed: ${(error as Error).message}`)
+			throw new Error(`Gemini Audio STT failed: ${(e as Error).message}`)
 		}
 	}
 
@@ -183,10 +183,10 @@ Format your response as JSON:
 			)
 
 			return analysisResult
-		} catch (error) {
-			this.logger.error(`[Gemini Audio] Analysis failed: ${(error as Error).message}`)
+		} catch (e) {
+			this.logger.error(`[Gemini Audio] Analysis failed: ${(e as Error).message}`)
 
-			throw new Error(`Gemini Audio analysis failed: ${(error as Error).message}`)
+			throw new Error(`Gemini Audio analysis failed: ${(e as Error).message}`)
 		}
 	}
 
@@ -244,10 +244,10 @@ Format your response as JSON:
 					}
 				}
 			}
-		} catch (error) {
-			this.logger.error(`[Fallback] Both providers failed: ${(error as Error).message}`)
+		} catch (e) {
+			this.logger.error(`[Fallback] Both providers failed: ${(e as Error).message}`)
 
-			throw new Error(`STT failed with all providers: ${(error as Error).message}`)
+			throw new Error(`STT failed with all providers: ${(e as Error).message}`)
 		}
 	}
 
@@ -290,10 +290,10 @@ Format your response as JSON:
 				},
 				similarity
 			}
-		} catch (error) {
-			this.logger.error(`[Compare] Comparison failed: ${(error as Error).message}`)
+		} catch (e) {
+			this.logger.error(`[Compare] Comparison failed: ${(e as Error).message}`)
 
-			throw new Error(`Provider comparison failed: ${(error as Error).message}`)
+			throw new Error(`Provider comparison failed: ${(e as Error).message}`)
 		}
 	}
 

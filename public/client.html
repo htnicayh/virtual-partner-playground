@@ -19,9 +19,16 @@
 				background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
 				min-height: 100vh;
 				display: flex;
-				align-items: center;
-				justify-content: center;
 				padding: 20px;
+				gap: 20px;
+			}
+
+			.main-content {
+				display: flex;
+				gap: 20px;
+				width: 100%;
+				max-width: 1200px;
+				margin: 0 auto;
 			}
 
 			.container {
@@ -31,6 +38,52 @@
 				max-width: 600px;
 				width: 100%;
 				padding: 40px;
+				flex: 1;
+			}
+
+			.chat-sidebar {
+				background: white;
+				border-radius: 12px;
+				box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+				width: 350px;
+				padding: 20px;
+				display: flex;
+				flex-direction: column;
+			}
+
+			.sidebar-title {
+				font-size: 16px;
+				font-weight: 700;
+				color: #333;
+				margin-bottom: 15px;
+				border-bottom: 2px solid #667eea;
+				padding-bottom: 10px;
+			}
+
+			.sidebar-messages {
+				flex: 1;
+				overflow-y: auto;
+				display: flex;
+				flex-direction: column;
+				gap: 10px;
+			}
+
+			.sidebar-message {
+				padding: 10px 12px;
+				border-radius: 6px;
+				font-size: 12px;
+				line-height: 1.4;
+			}
+
+			.sidebar-message.user {
+				background: #e3f2fd;
+				border-left: 3px solid #667eea;
+				text-align: right;
+			}
+
+			.sidebar-message.assistant {
+				background: #f1f8e9;
+				border-left: 3px solid #4caf50;
 			}
 
 			h1 {
@@ -90,11 +143,11 @@
 
 			button {
 				flex: 1;
-				min-width: 120px;
-				padding: 12px 20px;
+				min-width: 60px;
+				padding: 10px 12px;
 				border: none;
 				border-radius: 6px;
-				font-size: 14px;
+				font-size: 12px;
 				font-weight: 600;
 				cursor: pointer;
 				transition: all 0.3s ease;
@@ -280,71 +333,122 @@
 				border-radius: 6px;
 				background: #f9f9f9;
 			}
+
+			.btn-warning {
+				background: #ff9800;
+				color: white;
+			}
+
+			.btn-warning:hover:not(:disabled) {
+				background: #f57c00;
+			}
+
+			.chat-display {
+				background: #f5f5f5;
+				border-radius: 6px;
+				padding: 15px;
+				margin-bottom: 20px;
+				max-height: 300px;
+				overflow-y: auto;
+			}
+
+			.chat-display-message {
+				padding: 10px 12px;
+				margin-bottom: 8px;
+				border-radius: 4px;
+				font-size: 13px;
+				line-height: 1.4;
+			}
+
+			.chat-display-message.user {
+				background: #e3f2fd;
+				border-left: 3px solid #667eea;
+				text-align: right;
+			}
+
+			.chat-display-message.assistant {
+				background: #f1f8e9;
+				border-left: 3px solid #4caf50;
+			}
 		</style>
 	</head>
 	<body>
-		<div class="container">
-			<h1>🎤 Audio Stream Test</h1>
-			<p class="subtitle">Test microphone & WebSocket connection</p>
+		<div class="main-content">
+			<div class="container">
+				<h1>🎤 Audio Stream Test</h1>
+				<p class="subtitle">Test microphone & WebSocket connection</p>
 
-			<div class="status disconnected" id="status">
-				<span class="status-text" id="statusText">Disconnected</span>
-			</div>
-
-			<div class="controls">
-				<button class="btn-success" id="connectBtn" onclick="connect()">Connect</button>
-				<button class="btn-primary" id="recordBtn" onclick="startRecording()" disabled>Record</button>
-				<button class="btn-danger" id="stopBtn" onclick="stopRecording()" disabled>Stop</button>
-				<button class="btn-danger" id="cancelBtn" onclick="cancelStream()" disabled>Cancel</button>
-			</div>
-
-			<div class="audio-visualization" id="visualization">
-				<div class="section-title">Audio Waveform</div>
-				<canvas id="audioCanvas"></canvas>
-			</div>
-
-			<div class="processing-indicator" id="processing">
-				<div class="spinner"></div>
-				<p id="processingText" style="margin-top: 10px; font-size: 13px"></p>
-			</div>
-
-			<div class="info-section">
-				<div class="section-title">Your Transcription</div>
-				<div class="transcript-box" id="transcript">
-					<span class="empty-text">Waiting for audio...</span>
+				<div class="status disconnected" id="status">
+					<span class="status-text" id="statusText">Disconnected</span>
 				</div>
-			</div>
 
-			<div class="info-section">
-				<div class="section-title">AI Response</div>
-				<div class="response-box" id="response">
-					<span class="empty-text">Waiting for response...</span>
+				<div class="controls">
+					<button class="btn-success" id="connectBtn" onclick="connect()">Connect</button>
+					<button class="btn-primary" id="recordBtn" onclick="startRecording()" disabled>Record</button>
+					<button class="btn-primary" id="finishBtn" onclick="finishRecording()" disabled>Finish</button>
+					<button class="btn-danger" id="stopBtn" onclick="stopSession()" disabled>Stop</button>
+					<button class="btn-danger" id="cancelBtn" onclick="cancelStream()" disabled>Cancel</button>
 				</div>
-			</div>
 
-			<div class="info-section">
-				<div class="section-title">Processing Metrics</div>
-				<div class="metrics">
-					<div class="metric">
-						<div class="metric-value" id="bytesMetric">0</div>
-						<div class="metric-label">Bytes Sent</div>
-					</div>
-					<div class="metric">
-						<div class="metric-value" id="chunksMetric">0</div>
-						<div class="metric-label">Chunks Sent</div>
-					</div>
-					<div class="metric">
-						<div class="metric-value" id="timeMetric">0ms</div>
-						<div class="metric-label">Processing Time</div>
-					</div>
-					<div class="metric">
-						<div class="metric-value" id="recordTimeMetric">0s</div>
-						<div class="metric-label">Recording Time</div>
+				<div class="chat-display" id="chatDisplay">
+					<div style="text-align: center; color: #999; font-size: 12px">Chat messages will appear here...</div>
+				</div>
+
+				<div class="audio-visualization" id="visualization">
+					<div class="section-title">Audio Waveform</div>
+					<canvas id="audioCanvas"></canvas>
+				</div>
+
+				<div class="processing-indicator" id="processing">
+					<div class="spinner"></div>
+					<p id="processingText" style="margin-top: 10px; font-size: 13px"></p>
+				</div>
+
+				<div class="info-section">
+					<div class="section-title">Your Transcription</div>
+					<div class="transcript-box" id="transcript">
+						<span class="empty-text">Waiting for audio...</span>
 					</div>
 				</div>
+
+				<div class="info-section">
+					<div class="section-title">AI Response</div>
+					<div class="response-box" id="response">
+						<span class="empty-text">Waiting for response...</span>
+					</div>
+				</div>
+
+				<div class="info-section">
+					<div class="section-title">Processing Metrics</div>
+					<div class="metrics">
+						<div class="metric">
+							<div class="metric-value" id="bytesMetric">0</div>
+							<div class="metric-label">Bytes Sent</div>
+						</div>
+						<div class="metric">
+							<div class="metric-value" id="chunksMetric">0</div>
+							<div class="metric-label">Chunks Sent</div>
+						</div>
+						<div class="metric">
+							<div class="metric-value" id="timeMetric">0ms</div>
+							<div class="metric-label">Processing Time</div>
+						</div>
+						<div class="metric">
+							<div class="metric-value" id="recordTimeMetric">0s</div>
+							<div class="metric-label">Recording Time</div>
+						</div>
+					</div>
+				</div>
+
+				<div class="log-container" id="logs"></div>
 			</div>
 
-			<div class="log-container" id="logs"></div>
+			<div class="chat-sidebar">
+				<div class="sidebar-title">💬 Chat History</div>
+				<div class="sidebar-messages" id="sidebarMessages">
+					<p style="text-align: center; color: #999; font-size: 12px">Start recording to see messages...</p>
+				</div>
+			</div>
 		</div>
 
 		<script>
@@ -362,8 +466,13 @@
 			let canvas = null
 			let canvasCtx = null
 			let animationId = null
+			let chatHistory = []
+			let conversationId = null
+			let displayedMessages = new Set()
+			let clientLogs = [] // Store logs for server upload
 
 			const SERVER_URL = 'ws://localhost:3000'
+			const HTTP_URL = 'http://localhost:3000'
 			const CHUNK_SIZE = 8192
 
 			function log(message, type = 'message') {
@@ -391,7 +500,82 @@
 				entry.innerHTML = html
 				logsContainer.appendChild(entry)
 				logsContainer.scrollTop = logsContainer.scrollHeight
+
+				// Store log for server upload
+				clientLogs.push({
+					timestamp: time,
+					level: type.toUpperCase(),
+					message: message,
+					context: 'Client'
+				})
 			}
+
+			async function uploadLogsToServer() {
+				try {
+					if (clientLogs.length === 0) {
+						console.log('No logs to upload')
+						return false
+					}
+
+					const response = await fetch(`${HTTP_URL}/logs/save`, {
+						method: 'POST',
+						headers: {
+							'Content-Type': 'application/json'
+						},
+						body: JSON.stringify({ logs: clientLogs })
+					})
+
+					const result = await response.json()
+
+					if (response.ok) {
+						console.log(`✓ Logs uploaded: ${result.filename}`)
+						console.log(`📥 Download: ${result.path}`)
+						clientLogs = [] // Clear after upload
+						return true
+					} else {
+						console.error(`Failed to upload logs: ${result.error}`)
+						return false
+					}
+				} catch (error) {
+					console.error(`Upload logs error: ${error.message}`)
+					return false
+				}
+			}
+
+			// Auto-upload logs before page unload
+			window.addEventListener('beforeunload', async (event) => {
+				log(`[BEFOREUNLOAD] Page about to unload/reload`, 'message')
+				if (clientLogs.length > 0) {
+					log(`[BEFOREUNLOAD] Uploading ${clientLogs.length} logs before exit...`, 'message')
+					console.log(`⏳ Uploading ${clientLogs.length} logs before exit...`)
+					await uploadLogsToServer()
+				}
+			})
+
+			window.addEventListener('unload', () => {
+				log(`[UNLOAD] Page unloading`, 'message')
+			})
+
+			window.addEventListener('popstate', () => {
+				log(`[POPSTATE] History back/forward`, 'message')
+			})
+
+			window.addEventListener('pagehide', () => {
+				log(`[PAGEHIDE] Page hidden/unload`, 'message')
+			})
+
+			document.addEventListener('visibilitychange', () => {
+				log(`[VISIBILITY] Visibility changed: ${document.hidden ? 'hidden' : 'visible'}`, 'message')
+			})
+
+			// Global error handler
+			window.addEventListener('error', (event) => {
+				log(`[GLOBAL ERROR] ${event.message} at ${event.filename}:${event.lineno}`, 'error')
+			})
+
+			window.addEventListener('unhandledrejection', (event) => {
+				log(`[UNHANDLED REJECTION] ${event.reason}`, 'error')
+			})
 
 			function updateStatus(text, type) {
 				const statusEl = document.getElementById('status')
@@ -409,6 +593,28 @@
 					const elapsed = ((Date.now() - recordingStartTime) / 1000).toFixed(1)
 					document.getElementById('recordTimeMetric').textContent = elapsed + 's'
 				}
+			}
+
+			function addChatMessage(text, role) {
+				const messageKey = `${role}:${text}`
+
+				if (displayedMessages.has(messageKey)) {
+					return
+				}
+				displayedMessages.add(messageKey)
+
+				const sidebarMessages = document.getElementById('sidebarMessages')
+				if (sidebarMessages.children[0]?.textContent.includes('Start recording')) {
+					sidebarMessages.innerHTML = ''
+					displayedMessages.clear()
+				}
+
+				const messageEl = document.createElement('div')
+				messageEl.className = `sidebar-message ${role}`
+				messageEl.textContent = text
+
+				sidebarMessages.appendChild(messageEl)
+				sidebarMessages.scrollTop = sidebarMessages.scrollHeight
 			}
 
 			function showProcessing(text) {
@@ -445,6 +651,17 @@
 						log('Disconnected from server', 'error')
 						document.getElementById('connectBtn').disabled = false
 						document.getElementById('recordBtn').disabled = true
+						document.getElementById('finishBtn').disabled = true
+						document.getElementById('stopBtn').disabled = true
+						isRecording = false
+					})
+
+					socket.on('disconnect', (reason) => {
+						log(`[DEBUG DISCONNECT] Reason: ${reason}`, 'error')
+						updateStatus('Disconnected', 'disconnected')
+						document.getElementById('connectBtn').disabled = false
+						document.getElementById('recordBtn').disabled = true
+						document.getElementById('finishBtn').disabled = true
 						document.getElementById('stopBtn').disabled = true
 						isRecording = false
 					})
@@ -461,6 +678,8 @@
 					socket.on('user-transcript', (data) => {
 						document.getElementById('transcript').textContent = data.text
 						log('Transcription received', 'success')
+						chatHistory.push({ role: 'user', content: data.text })
+						addChatMessage(data.text, 'user')
 					})
 
 					socket.on('processing', (data) => {
@@ -471,20 +690,124 @@
 					socket.on('ai-response', (data) => {
 						document.getElementById('response').textContent = data.text
 						log('AI response received', 'success')
+						chatHistory.push({ role: 'assistant', content: data.text })
+						addChatMessage(data.text, 'assistant')
 					})
 
 					socket.on('response-complete', (data) => {
-						hideProcessing()
-						document.getElementById('timeMetric').textContent = data.processingTime + 'ms'
-						log(`Complete in ${data.processingTime}ms`, 'success')
-						updateMetrics()
-						stopVisualization()
-					})
+						log(`[STEP 1] response-complete event received`, 'message')
 
-					socket.on('error', (data) => {
-						log(`Error: ${data.message}`, 'error')
-						hideProcessing()
-						updateStatus('Error', 'disconnected')
+						try {
+							log(`[STEP 2] Hiding processing indicator...`, 'message')
+							hideProcessing()
+							log(`[STEP 3] Processing hidden`, 'message')
+
+							log(`[STEP 4] Updating time metric...`, 'message')
+							document.getElementById('timeMetric').textContent = data.processingTime + 'ms'
+							log(`[STEP 5] Time metric updated: ${data.processingTime}ms`, 'message')
+
+							log(`[STEP 6] Updating metrics...`, 'message')
+							updateMetrics()
+							log(`[STEP 7] Metrics updated`, 'message')
+
+							log(`[STEP 8] Stopping visualization...`, 'message')
+							stopVisualization()
+							log(`[STEP 9] Visualization stopped`, 'message')
+
+							log(`[STEP 10] Enabling buttons...`, 'message')
+							document.getElementById('recordBtn').disabled = false
+							document.getElementById('stopBtn').disabled = false
+							log(`[STEP 11] Buttons updated`, 'message')
+
+							log(`[STEP 12] Checking if audioUrl exists...`, 'message')
+							if (!data.audioUrl) {
+								log(`[STEP 12a] No audio URL in response!`, 'error')
+								return
+							}
+							log(`[STEP 12b] audioUrl exists: ${data.audioUrl}`, 'message')
+
+							log(`[STEP 13] Constructing audio URL...`, 'message')
+							const audioUrl =
+								data.audioUrl.startsWith('http') || data.audioUrl.startsWith('data:')
+									? data.audioUrl
+									: `http://localhost:3000${data.audioUrl}`
+							log(`[STEP 14] Audio URL constructed: ${audioUrl.substring(0, 60)}...`, 'message')
+
+							log(`Audio URL: ${audioUrl.substring(0, 60)}...`, 'success')
+							log(`[STEP 15] Logged audio URL`, 'message')
+
+							log(`[STEP 16] Setting up setTimeout for audio playback...`, 'message')
+
+							setTimeout(() => {
+								log(`[STEP 17] setTimeout callback EXECUTED`, 'message')
+								log(`[STEP 18] Creating Audio element...`, 'message')
+
+								try {
+									const audio = new Audio()
+									log(`[STEP 19] Audio element created`, 'message')
+
+									audio.crossOrigin = 'anonymous'
+									audio.volume = 1.0
+									log(`[STEP 20] Audio properties set`, 'message')
+
+									log(`[STEP 21] Setting up event listeners...`, 'message')
+
+									audio.onplay = () => {
+										log('Audio playback started', 'success')
+									}
+
+									audio.onended = () => {
+										log('Audio playback completed', 'success')
+									}
+
+									audio.onerror = (err) => {
+										log(`Audio error: ${audio.error?.message || 'Unknown error'}`, 'error')
+										log(`Audio error code: ${audio.error?.code}`, 'error')
+									}
+
+									audio.onloadstart = () => {
+										log('Audio loading...', 'message')
+									}
+
+									audio.oncanplay = () => {
+										log('Audio ready to play', 'success')
+									}
+
+									audio.onloadedmetadata = () => {
+										log(`Audio metadata loaded: ${audio.duration.toFixed(2)}s`, 'success')
+									}
+
+									log(`[STEP 22] Event listeners attached`, 'message')
+
+									log(`[STEP 23] Setting audio src to: ${audioUrl.substring(0, 80)}...`, 'message')
+									audio.src = audioUrl
+									log(`[STEP 24] Audio src set`, 'message')
+
+									log(`[STEP 25] Calling audio.play()...`, 'message')
+									audio
+										.play()
+										.then(() => {
+											log('Playing AI response audio...', 'success')
+										})
+										.catch((err) => {
+											log(`Audio playback failed: ${err.message}`, 'error')
+										})
+									log(`[STEP 26] audio.play() called`, 'message')
+								} catch (err) {
+									log(`[ERROR in setTimeout] ${err.message}`, 'error')
+									log(`[ERROR Stack] ${err.stack}`, 'error')
+								}
+
+								log(`[STEP 27] setTimeout callback FINISHED`, 'message')
+							}, 300)
+
+							log(`[STEP 28] setTimeout scheduled (will run after 300ms)`, 'message')
+						} catch (error) {
+							log(`[GLOBAL ERROR in response-complete] ${error.message}`, 'error')
+							log(`[ERROR Stack] ${error.stack}`, 'error')
+						}
+
+						log(`[STEP 29] response-complete handler FINISHED`, 'message')
 					})
 
 					socket.on('stream-cancelled', () => {
@@ -493,6 +816,7 @@
 						updateStatus('Connected', 'connected')
 						isRecording = false
 						document.getElementById('recordBtn').disabled = false
+						document.getElementById('finishBtn').disabled = true
 						document.getElementById('stopBtn').disabled = true
 						document.getElementById('cancelBtn').disabled = true
 						stopVisualization()
@@ -562,7 +886,7 @@
 					log('Recording started', 'success')
 
 					document.getElementById('recordBtn').disabled = true
-					document.getElementById('stopBtn').disabled = false
+					document.getElementById('finishBtn').disabled = false
 					document.getElementById('cancelBtn').disabled = false
 
 					socket.emit('start-stream', {
@@ -571,45 +895,59 @@
 						sessionId: 'session-' + Date.now(),
 						provider: 'gemini'
 					})
+
+					conversationId = 'conv-' + Date.now()
+					chatHistory = []
+					displayedMessages.clear()
+					document.getElementById('stopBtn').disabled = true
 				} catch (error) {
 					log(`Microphone error: ${error.message}`, 'error')
 					updateStatus('Microphone Error', 'disconnected')
 				}
 			}
 
-			async function stopRecording() {
+			async function finishRecording() {
 				if (!mediaRecorder || !isRecording) return
 
 				try {
-					mediaRecorder.stop()
-
-					mediaRecorder.onstop = async () => {
-						const blob = new Blob(audioChunks, { type: 'audio/wav' })
-						const buffer = await blob.arrayBuffer()
-						const uint8Array = new Uint8Array(buffer)
-
-						const base64 = btoa(String.fromCharCode.apply(null, uint8Array))
-
-						socket.emit('audio-chunk', {
-							chunk: base64,
-							chunkIndex: chunksSent,
-							isFinal: true
-						})
-
-						chunksSent++
-						updateMetrics()
-						log('Final chunk sent', 'success')
-					}
-
+					isRecording = false
 					clearInterval(recordingInterval)
 					mediaStream.getTracks().forEach((track) => track.stop())
 
-					isRecording = false
 					updateStatus('Processing', 'processing')
 					log('Recording stopped', 'success')
 
 					document.getElementById('recordBtn').disabled = false
-					document.getElementById('stopBtn').disabled = true
+					document.getElementById('finishBtn').disabled = true
+					document.getElementById('stopBtn').disabled = false
+					document.getElementById('cancelBtn').disabled = true
+
+					// Send final chunk and end stream
+					mediaRecorder.ondataavailable = async (event) => {
+						if (event.data.size > 0) {
+							const buffer = await event.data.arrayBuffer()
+							const uint8Array = new Uint8Array(buffer)
+							const base64 = btoa(String.fromCharCode.apply(null, uint8Array))
+
+							socket.emit('audio-chunk', {
+								chunk: base64,
+								chunkIndex: chunksSent,
+								isFinal: true
+							})
+
+							chunksSent++
+							updateMetrics()
+							log('Final chunk sent', 'success')
+						}
+					}
+
+					mediaRecorder.onstop = () => {
+						log('MediaRecorder stopped', 'success')
+						socket.emit('end-stream', { sessionId: 'test' })
+						log('End stream signal sent', 'success')
+					}
+
+					mediaRecorder.stop()
 				} catch (error) {
 					log(`Stop recording error: ${error.message}`, 'error')
 				}
@@ -622,12 +960,30 @@
 				}
 			}
 
+			function stopSession() {
+				log('[DEBUG] stopSession() called - manually by user', 'message')
+				if (socket) {
+					socket.emit('end-conversation', { conversationId })
+					log('End conversation signal sent', 'success')
+
+					setTimeout(() => {
+						socket.disconnect()
+						updateStatus('Disconnected', 'disconnected')
+						log('Conversation session closed', 'success')
+						document.getElementById('connectBtn').disabled = false
+						document.getElementById('recordBtn').disabled = true
+						document.getElementById('finishBtn').disabled = true
+						document.getElementById('stopBtn').disabled = true
+						document.getElementById('cancelBtn').disabled = true
+					}, 500)
+				}
+			}
+
 			function startVisualization() {
 				canvas = document.getElementById('audioCanvas')
 				canvasCtx = canvas.getContext('2d')
 				document.getElementById('visualization').classList.add('active')
 
-				// Set canvas size
 				canvas.width = canvas.offsetWidth
 				canvas.height = canvas.offsetHeight
 
