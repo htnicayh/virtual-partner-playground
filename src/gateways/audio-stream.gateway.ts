@@ -9,23 +9,24 @@ import {
 	WebSocketServer
 } from '@nestjs/websockets'
 import { Server, Socket } from 'socket.io'
+import { EVENTS } from '../commons/constants'
+import { AudioChunk, EndStream, StartStream } from '../commons/interfaces/message-body.interface'
 import { AudioService } from '../services/audio.service'
 import { CacheService } from '../services/cache.service'
 import { LlmService } from '../services/llm.service'
 import { STTService } from '../services/speech-to-text.service'
 import { TTSService } from '../services/text-to-speech.service'
-
 @WebSocketGateway({
 	cors: {
-		origin: process.env.FRONTEND_URL || 'http://127.0.0.1:5500',
+		origin: process.env.FRONTEND_URL || '*',
 		credentials: true
 	},
 	namespace: '/audio'
 })
 @Injectable()
 export class AudioStreamGateway implements OnGatewayConnection, OnGatewayDisconnect {
-	private readonly logger = new Logger('AudioStreamGateway')
-	private processingMap = new Map<string, { isProcessing: boolean; processingPromise: Promise<void> | null }>()
+	private readonly logger = new Logger(AudioStreamGateway.name)
+	private readonly processors = new Map<string, { processing: boolean; promise: Promise<void> | null }>()
 
 	@WebSocketServer()
 	server: Server
@@ -39,60 +40,60 @@ export class AudioStreamGateway implements OnGatewayConnection, OnGatewayDisconn
 	) {}
 
 	async handleConnection(client: Socket) {
-		this.logger.log(`✓ Client connected: ${client.id}`)
+		const clientID = client.id
+
+		this.logger.log(`[${clientID}] Client connected`)
 
 		client.emit('connection', {
 			status: 'connected',
-			socketId: client.id,
+			socketId: clientID,
 			timestamp: Date.now()
 		})
 	}
 
 	async handleDisconnect(client: Socket) {
-		this.logger.log(`✓ Client disconnected: ${client.id}`)
+		const clientID = client.id
 
-		const processingState = this.processingMap.get(client.id)
+		this.logger.log(`[${clientID}] Client disconnected`)
 
-		if (processingState?.isProcessing) {
-			this.logger.warn(`⚠️  Client disconnected while processing: ${client.id}`)
+		const processor = this.processors.get(clientID)
+
+		if (processor?.processing) {
+			this.logger.warn(`Client disconnected while processing: ${clientID}`)
 		}
 
-		const sessionState = await this.cacheService.getSessionState(client.id)
+		const session = await this.cacheService.getSessionState(clientID)
 
-		if (sessionState?.isClosed) {
-			await this.cacheService.clearClientCaches(client.id)
-			await this.audioService.clearAudioSession(client.id)
-			this.logger.debug(`[Cleanup] Session cleaned up: ${client.id}`)
+		if (session?.isClosed) {
+			await Promise.allSettled([
+				this.cacheService.clearClientCaches(clientID),
+				this.audioService.clearAudioSession(clientID)
+			])
+
+			this.logger.debug(`[${clientID}] Session cleaned up: ${clientID}`)
 		} else {
-			this.logger.debug(`[Cleanup] Session kept alive for reconnection: ${client.id}`)
+			this.logger.debug(`[${clientID}] Session kept alive for reconnection: ${clientID}`)
 		}
 
-		this.processingMap.delete(client.id)
+		this.processors.delete(clientID)
 	}
 
-	@SubscribeMessage('start-stream')
-	async handleStartStream(
-		@ConnectedSocket() client: Socket,
-		@MessageBody()
-		data: {
-			userId: string
-			conversationId: string
-			sessionId: string
-			provider?: 'openai' | 'gemini'
-		}
-	) {
-		try {
-			await this.audioService.createAudioSession(client.id, data.sessionId, data.conversationId)
+	@SubscribeMessage(EVENTS.START_STREAM)
+	async handleStartStream(@ConnectedSocket() client: Socket, @MessageBody() mb: StartStream) {
+		const clientID = client.id
 
-			this.logger.log(`[Step 1] Stream started: ${data.userId} / ${data.conversationId}`)
+		try {
+			await this.audioService.createAudioSession(clientID, mb.sessionId, mb.conversationId)
+
+			this.logger.log(`[${clientID}] Stream started: ${mb.userId} / ${mb.conversationId}`)
 
 			client.emit('stream-started', {
-				sessionKey: client.id,
+				sessionKey: clientID,
 				status: 'streaming',
 				timestamp: Date.now()
 			})
 		} catch (e) {
-			this.logger.error(`Failed to start stream: ${e.message}`)
+			this.logger.error(`[${clientID}] Failed to start stream: ${e.message}`)
 
 			client.emit('error', {
 				code: 'STREAM_START_FAILED',
@@ -101,31 +102,26 @@ export class AudioStreamGateway implements OnGatewayConnection, OnGatewayDisconn
 		}
 	}
 
-	@SubscribeMessage('audio-chunk')
-	async handleAudioChunk(
-		@ConnectedSocket() client: Socket,
-		@MessageBody()
-		data: {
-			chunk: string
-			chunkIndex: number
-			isFinal: boolean
-		}
-	) {
+	@SubscribeMessage(EVENTS.AUDIO_CHUNK)
+	async handleAudioChunk(@ConnectedSocket() client: Socket, @MessageBody() mb: AudioChunk) {
+		const clientID = client.id
+
 		try {
-			const audioSession = await this.audioService.addAudioChunk(client.id, data.chunk, data.chunkIndex)
+			const { chunk, chunkIndex, isFinal } = mb
+			const audio = await this.audioService.addAudioChunk(clientID, chunk, chunkIndex)
 
 			client.emit('chunk-received', {
-				chunkIndex: data.chunkIndex,
-				bytesReceived: audioSession.totalBytes,
-				duration: Date.now() - audioSession.startTime,
+				chunkIndex: chunkIndex,
+				bytesReceived: audio.totalBytes,
+				duration: Date.now() - audio.startTime,
 				timestamp: Date.now()
 			})
 
-			if (data.isFinal) {
-				this.logger.log(`[Step 6] Final chunk received, preparing to process...`)
+			if (isFinal) {
+				this.logger.log(`[${clientID}] Step 6: Final chunk received, preparing to process...`)
 			}
 		} catch (e) {
-			this.logger.error(`Failed to process chunk: ${e.message}`)
+			this.logger.error(`[${clientID}] Failed to process chunk: ${e.message}`)
 
 			client.emit('error', {
 				code: 'CHUNK_FAILED',
@@ -134,96 +130,83 @@ export class AudioStreamGateway implements OnGatewayConnection, OnGatewayDisconn
 		}
 	}
 
-	@SubscribeMessage('end-stream')
-	async handleEndStream(@ConnectedSocket() client: Socket, @MessageBody() data: { sessionId: string }) {
+	@SubscribeMessage(EVENTS.END_STREAM)
+	async handleEndStream(@ConnectedSocket() client: Socket, @MessageBody() mb: EndStream) {
+		const clientID = client.id
+		const streamType = mb?.streamType || 'sentence'
+
 		try {
-			const processingState = this.processingMap.get(client.id)
+			const processor = this.processors.get(clientID)
 
-			if (processingState?.isProcessing) {
-				this.logger.log(`[Skip] Stream already being processed for client: ${client.id}`)
+			if (processor?.processing) {
+				this.logger.log(`[${clientID}] Skip stream already being processed`)
 
-				if (processingState.processingPromise) {
-					await processingState.processingPromise
+				if (processor.promise) {
+					await processor.promise
 				}
 
 				return
 			}
 
-			this.logger.log(`[Step 6] End stream signal received, starting processing...`)
+			this.logger.log(`[${clientID}] Step 6: End stream signal received, starting processing...`)
 
-			let resolveProcessing: () => void
+			let resolveProcessor: () => void
 
-			const processingPromise = new Promise<void>((resolve) => {
-				resolveProcessing = resolve
+			const promise = new Promise<void>((resolve) => {
+				resolveProcessor = resolve
 			})
 
-			this.processingMap.set(client.id, {
-				isProcessing: true,
-				processingPromise
-			})
+			this.processors.set(clientID, { processing: true, promise })
 
-			this.logger.log(`[DEBUG-BEFORE] About to process audio...`)
+			this.logger.log(`[${clientID}] DEBUG-BEFORE: About to process audio...`)
 
 			try {
-				await this._processAudioStream(client, client.id)
+				await this.processing(client)
 
-				this.logger.log(`[Complete] Audio processing finished for ${client.id}`)
+				this.logger.log(`[${clientID}] COMPLETE: Audio processing finished`)
 			} finally {
-				this.logger.log(`[DEBUG-FINALLY] In finally block, resolving promise...`)
+				this.logger.log(`[${clientID}] DEBUG-FINALLY: In finally block, resolving promise...`)
 
-				this.processingMap.set(client.id, {
-					isProcessing: false,
-					processingPromise: null
-				})
+				this.processors.set(clientID, { processing: false, promise: null })
 
-				this.logger.log(`[DEBUG-FINALLY] About to call resolveProcessing()...`)
+				this.logger.log(`[${clientID}] DEBUG-FINALLY: About to call resolveProcessor()...`)
 
-				resolveProcessing!()
+				resolveProcessor!()
 
-				this.logger.log(`[DEBUG-FINALLY] resolveProcessing() called`)
+				this.logger.log(`[${clientID}] DEBUG-FINALLY: resolveProcessor() called`)
 			}
 
-			this.logger.log(`[DEBUG-AFTER-FINALLY] After finally block`)
-			this.logger.log(`[DEBUG] handleEndStream COMPLETED - session remains active`)
+			this.logger.log(`[${clientID}] DEBUG-AFTER-FINALLY: After finally block`)
+			this.logger.log(`[${clientID}] DEBUG: handleEndStream COMPLETED - session remains active`)
 		} catch (e) {
-			this.logger.error(`Failed to end stream: ${e.message}`)
+			this.logger.error(`[${clientID}] Failed to end stream: ${e.message}`)
 
-			this.processingMap.set(client.id, {
-				isProcessing: false,
-				processingPromise: null
-			})
+			this.processors.set(clientID, { processing: false, promise: null })
 
-			client.emit('error', {
-				code: 'STREAM_END_FAILED',
-				message: e.message
-			})
+			client.emit('error', { code: 'STREAM_END_FAILED', message: e.message })
 		}
 	}
 
-	@SubscribeMessage('cancel-stream')
+	@SubscribeMessage(EVENTS.CANCEL_STREAM)
 	async handleCancelStream(@ConnectedSocket() client: Socket, @MessageBody() data: { sessionId: string }) {
+		const clientID = client.id
+
 		try {
-			this.logger.log(`[Cleanup] Stream cancelled: ${client.id}`)
+			this.logger.log(`[${clientID}] Stream cancelled`)
 
 			await this.audioService.clearAudioSession(client.id)
 
-			this.processingMap.delete(client.id)
+			this.processors.delete(client.id)
 
-			client.emit('stream-cancelled', {
-				status: 'cancelled',
-				timestamp: Date.now()
-			})
+			client.emit('stream-cancelled', { status: 'cancelled', timestamp: Date.now() })
 		} catch (e) {
-			this.logger.error(`Failed to cancel stream: ${e.message}`)
+			this.logger.error(`[${clientID}] Failed to cancel stream: ${e.message}`)
 
-			client.emit('error', {
-				code: 'CANCEL_FAILED',
-				message: e.message
-			})
+			client.emit('error', { code: 'CANCEL_FAILED', message: e.message })
 		}
 	}
 
-	@SubscribeMessage('end-conversation')
+	@SubscribeMessage(EVENTS.END_CONVERSATION)
 	async handleEndConversation(@ConnectedSocket() client: Socket, @MessageBody() data: { conversationId: string }) {
 		try {
 			this.logger.log(`[Step 25] End conversation signal received`)
@@ -236,7 +219,7 @@ export class AudioStreamGateway implements OnGatewayConnection, OnGatewayDisconn
 			await this.cacheService.clearClientCaches(client.id)
 			await this.audioService.clearAudioSession(client.id)
 
-			this.processingMap.delete(client.id)
+			this.processors.delete(client.id)
 
 			this.logger.debug(`[Cleanup] Session closed: ${client.id}`)
 
@@ -255,31 +238,32 @@ export class AudioStreamGateway implements OnGatewayConnection, OnGatewayDisconn
 		}
 	}
 
-	private async _processAudioStream(client: Socket, clientId: string) {
+	private async processing(client: Socket) {
 		const startTime = Date.now()
+		const clientID = client.id
 
 		try {
-			this.logger.log(`[Step 10] Concatenating audio chunks...`)
+			this.logger.log(`[${clientID}] Step 10: Concatenating audio chunks...`)
 
-			const fullAudioBuffer = await this.audioService.concatenateAudio(clientId)
+			const fullAudioBuffer = await this.audioService.concatenateAudio(clientID)
 
 			client.emit('processing', {
 				status: 'transcribing',
 				timestamp: Date.now()
 			})
 
-			this.logger.log(`[Step 11] Calling STT...`)
+			this.logger.log(`[${clientID}] Step 11: Calling STT...`)
 
-			let userTranscript: string
+			let transcript: string
 
 			try {
-				userTranscript = await this.sttService.transcribeAudioWithGemini(fullAudioBuffer)
+				transcript = await this.sttService.transcribeAudioWithGemini(fullAudioBuffer)
 
-				this.logger.log(`[Step 11] STT Success: "${userTranscript}"`)
+				this.logger.log(`[${clientID}] Step 11: STT Success: "${transcript}"`)
 
-				await this.cacheService.setUserTranscript(clientId, userTranscript)
+				await this.cacheService.setUserTranscript(clientID, transcript)
 			} catch (e) {
-				this.logger.error(`[Step 11] STT Failed: ${e.message}`)
+				this.logger.error(`[${clientID}] Step 11: STT Failed: ${e.message}`)
 
 				throw {
 					code: 'STT_FAILED',
@@ -288,7 +272,7 @@ export class AudioStreamGateway implements OnGatewayConnection, OnGatewayDisconn
 			}
 
 			client.emit('user-transcript', {
-				text: userTranscript,
+				text: transcript,
 				timestamp: Date.now()
 			})
 
@@ -297,9 +281,9 @@ export class AudioStreamGateway implements OnGatewayConnection, OnGatewayDisconn
 				timestamp: Date.now()
 			})
 
-			const conversationId = `temp-conv-${clientId}`
+			const conversationId = `temp-conv-${clientID}`
 
-			this.logger.log(`[Step 12] Retrieving chat history...`)
+			this.logger.log(`[${clientID}] Step 12: Retrieving chat history...`)
 
 			let messages = (await this.cacheService.getChatHistory(conversationId)) as any
 
@@ -307,9 +291,9 @@ export class AudioStreamGateway implements OnGatewayConnection, OnGatewayDisconn
 				messages = []
 			}
 
-			messages.push({ role: 'user', content: userTranscript })
+			messages.push({ role: 'user', content: transcript })
 
-			this.logger.log(`[Step 13] Calling Gemini API...`)
+			this.logger.log(`[${clientID}] Step 13: Calling Gemini API...`)
 
 			let aiResponse: string
 
@@ -318,11 +302,11 @@ export class AudioStreamGateway implements OnGatewayConnection, OnGatewayDisconn
 
 				aiResponse = result.response
 
-				this.logger.log(`[Step 14] AI Response: "${aiResponse.substring(0, 50)}..."`)
+				this.logger.log(`[${clientID}] Step 14: AI Response: "${aiResponse.substring(0, 50)}..."`)
 
-				await this.cacheService.setAIResponse(clientId, aiResponse)
+				await this.cacheService.setAIResponse(clientID, aiResponse)
 			} catch (e) {
-				this.logger.error(`[Step 14] Gemini API Failed: ${e.message}`)
+				this.logger.error(`[${clientID}] Step 14: Gemini API Failed: ${e.message}`)
 
 				throw {
 					code: 'LLM_FAILED',
@@ -334,7 +318,7 @@ export class AudioStreamGateway implements OnGatewayConnection, OnGatewayDisconn
 
 			client.emit('processing', { status: 'generating-audio', timestamp: Date.now() })
 
-			this.logger.log(`[Step 16] Calling TTS API...`)
+			this.logger.log(`[${clientID}] Step 16: Calling TTS API...`)
 
 			let audioUrl: string | undefined
 			let wordTimings: any[] = []
@@ -346,17 +330,17 @@ export class AudioStreamGateway implements OnGatewayConnection, OnGatewayDisconn
 				audioUrl = ttsResult.audioUrl
 				wordTimings = ttsResult.wordTimings
 
-				await this.cacheService.setWordTimings(clientId, wordTimings)
+				await this.cacheService.setWordTimings(clientID, wordTimings)
 
-				this.logger.log(`[Step 18] Audio generated: ${ttsResult.duration}ms, ${wordTimings.length} words`)
+				this.logger.log(`[${clientID}] Step 18: Audio generated: ${ttsResult.duration}ms, ${wordTimings.length} words`)
 			} catch (e) {
-				this.logger.warn(`[Step 16] TTS Failed: ${e.message}`)
+				this.logger.warn(`[${clientID}] Step 16: TTS Failed: ${e.message}`)
 
 				audioUrl = undefined
 				wordTimings = []
 			}
 
-			this.logger.log(`[Step 20] Saving to cache...`)
+			this.logger.log(`[${clientID}] Step 20: Saving to cache...`)
 
 			messages.push({ role: 'assistant', content: aiResponse })
 
@@ -368,7 +352,7 @@ export class AudioStreamGateway implements OnGatewayConnection, OnGatewayDisconn
 			this.logger.log(`[DEBUG] About to emit response-complete...`)
 
 			client.emit('response-complete', {
-				userTranscript,
+				userTranscript: transcript,
 				aiResponse,
 				audioUrl,
 				wordTimings,
@@ -379,16 +363,16 @@ export class AudioStreamGateway implements OnGatewayConnection, OnGatewayDisconn
 			this.logger.log(`[DEBUG] response-complete EMITTED`)
 			this.logger.log(`[DEBUG] Setting session state...`)
 
-			await this.cacheService.setSessionState(clientId, {
+			await this.cacheService.setSessionState(clientID, {
 				lastExchange: Date.now(),
-				userTranscript,
+				userTranscript: transcript,
 				aiResponse,
 				audioUrl,
 				isClosed: false
 			})
 
 			this.logger.log(`[DEBUG] Session state SET`)
-			this.logger.log(`[DEBUG] _processAudioStream COMPLETED`)
+			this.logger.log(`[DEBUG] processing COMPLETED`)
 		} catch (e) {
 			this.logger.error(`[Error] ${e.code}: ${e.message}`)
 
@@ -402,28 +386,7 @@ export class AudioStreamGateway implements OnGatewayConnection, OnGatewayDisconn
 
 			this.logger.log(`[DEBUG] Error event emitted`)
 
-			await this.audioService.clearAudioSession(clientId)
-		}
-	}
-
-	@SubscribeMessage('get-session-info')
-	async handleGetSessionInfo(@ConnectedSocket() client: Socket, @MessageBody() data: { sessionId: string }) {
-		try {
-			const audioSession = await this.audioService.getAudioSession(client.id)
-			const sessionState = await this.cacheService.getSessionState(client.id)
-
-			client.emit('session-info', {
-				audioSession,
-				sessionState,
-				timestamp: Date.now()
-			})
-		} catch (e) {
-			this.logger.error(`Failed to get session info: ${e.message}`)
-
-			client.emit('error', {
-				code: 'SESSION_INFO_FAILED',
-				message: e.message
-			})
+			await this.audioService.clearAudioSession(clientID)
 		}
 	}
 }

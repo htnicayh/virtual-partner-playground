@@ -5,5 +5,8 @@ export const EVENTS = {
 	AUDIO_CHUNK: 'audio-chunk',
 	END_STREAM: 'end-stream',
 	CANCEL_STREAM: 'cancel-stream',
-	GET_SESSION_INFO: 'get-session-info'
+	GET_SESSION_INFO: 'get-session-info',
+	END_CONVERSATION: 'end-conversation'
 }
+
+export const EVENTS_EMIT = {}

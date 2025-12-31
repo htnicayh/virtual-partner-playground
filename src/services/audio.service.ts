@@ -3,8 +3,8 @@ import { Injectable, Logger } from '@nestjs/common'
 import * as fs from 'fs'
 import Redis from 'ioredis'
 import * as path from 'path'
-import { saveAudioBufferAsWav } from '../utils'
 import { AudioSession } from '../commons/interfaces/audio-session.interface'
+import { saveAudioBufferAsWav } from '../utils'
 
 @Injectable()
 export class AudioService {
@@ -175,8 +175,8 @@ export class AudioService {
 
 		await this.redisClient.del(key)
 
-		// Delete all chunks
 		const keys = await this.redisClient.keys(chunksPattern)
+
 		if (keys.length > 0) {
 			await this.redisClient.del(...keys)
 		}
@@ -191,6 +191,7 @@ export class AudioService {
 		await this.redisClient.expire(key, this.SESSION_TTL)
 
 		const keys = await this.redisClient.keys(chunksPattern)
+
 		if (keys.length > 0) {
 			keys.forEach((k) => this.redisClient.expire(k, this.SESSION_TTL))
 		}

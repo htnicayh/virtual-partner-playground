@@ -1,4 +1,4 @@
-import { GoogleGenAI } from '@google/genai'
+import { GoogleGenAI, Modality } from '@google/genai'
 import { Injectable, Logger } from '@nestjs/common'
 import { ConfigService } from '@nestjs/config'
 import * as fs from 'fs'
@@ -164,9 +164,9 @@ export class TTSService {
 	}
 
 	calculateWordTimings(text: string): WordTiming[] {
+		const wordTimings: WordTiming[] = []
 		const words = text.split(/\s+/).filter((w) => w.length > 0)
 
-		const wordTimings: WordTiming[] = []
 		let currentTime = 0
 
 		for (const word of words) {
