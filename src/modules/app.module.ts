@@ -18,10 +18,7 @@ import { LogModule } from './log.module'
 
 @Module({
 	imports: [
-		ConfigModule.forRoot({
-			isGlobal: true,
-			envFilePath: '.env'
-		}),
+		ConfigModule.forRoot({ isGlobal: true }),
 		RouterModule.register([
 			{
 				path: '/api',
