@@ -410,15 +410,10 @@
 				</div>
 
 				<div class="controls">
-					<button class="btn-success" id="connectBtn" onclick="connect()">Connect</button>
 					<button class="btn-primary" id="recordBtn" onclick="startRecording()" disabled>Record</button>
 					<button class="btn-primary" id="finishBtn" onclick="finishRecording()" disabled>Finish</button>
 					<button class="btn-danger" id="stopBtn" onclick="stopSession()" disabled>Stop</button>
 					<button class="btn-danger" id="cancelBtn" onclick="cancelStream()" disabled>Cancel</button>
-				</div>
-
-				<div class="chat-display" id="chatDisplay">
-					<div style="text-align: center; color: #999; font-size: 12px">Chat messages will appear here...</div>
 				</div>
 
 				<div class="audio-visualization" id="visualization">
@@ -441,11 +436,7 @@
 				<div class="info-section">
 					<div class="section-title">AI Response</div>
 					<div class="response-box" id="response">
-						<div class="loading-skeleton" id="responseSkeleton">
-							<div class="skeleton-line"></div>
-							<div class="skeleton-line"></div>
-							<div class="skeleton-line"></div>
-						</div>
+						<span class="empty-text">Waiting for response...</span>
 					</div>
 				</div>
 
@@ -500,7 +491,8 @@
 			let chatHistory = []
 			let conversationId = null
 			let displayedMessages = new Set()
-			let clientLogs = [] // Store logs for server upload
+			let clientLogs = []
+			let hasStartedConversation = false
 
 			const SERVER_URL = 'ws://localhost:3000'
 			const HTTP_URL = 'http://localhost:3000'
@@ -633,18 +625,21 @@
 
 			function showResponseLoading() {
 				const responseBox = document.getElementById('response')
-				const skeleton = document.getElementById('responseSkeleton')
+				const skeleton = document.createElement('div')
+				skeleton.className = 'loading-skeleton'
+				skeleton.id = 'responseSkeleton'
+				skeleton.innerHTML =
+					'<div class="skeleton-line"></div><div class="skeleton-line"></div><div class="skeleton-line"></div>'
 
-				if (skeleton) {
-					skeleton.style.display = 'flex'
-				}
+				responseBox.innerHTML = ''
+				responseBox.appendChild(skeleton)
 			}
 
 			function hideResponseLoading() {
 				const skeleton = document.getElementById('responseSkeleton')
 
 				if (skeleton) {
-					skeleton.style.display = 'none'
+					skeleton.remove()
 				}
 			}
 
@@ -664,7 +659,6 @@
 						updateStatus('Connected', 'connected')
 						log('Connected to server', 'success')
 
-						document.getElementById('connectBtn').disabled = true
 						document.getElementById('recordBtn').disabled = false
 					})
 
@@ -672,7 +666,6 @@
 						updateStatus('Disconnected', 'disconnected')
 						log('Disconnected from server', 'error')
 
-						document.getElementById('connectBtn').disabled = false
 						document.getElementById('recordBtn').disabled = true
 						document.getElementById('finishBtn').disabled = true
 						document.getElementById('stopBtn').disabled = true
@@ -684,7 +677,6 @@
 						log(`[DEBUG DISCONNECT] Reason: ${reason}`, 'error')
 						updateStatus('Disconnected', 'disconnected')
 
-						document.getElementById('connectBtn').disabled = false
 						document.getElementById('recordBtn').disabled = true
 						document.getElementById('finishBtn').disabled = true
 						document.getElementById('stopBtn').disabled = true
@@ -696,7 +688,6 @@
 						log('Stream started', 'success')
 
 						showProcessing('Recording audio...')
-						showResponseLoading()
 					})
 
 					socket.on('chunk-received', (data) => {
@@ -722,16 +713,17 @@
 					let pendingAITranscript = null
 
 					socket.on('ai-response', (data) => {
-						hideResponseLoading()
+						if (!hasStartedConversation) {
+							hasStartedConversation = true
+						}
+
+						showResponseLoading()
 
 						pendingAITranscript = data.text
 
 						log('AI response received, transcript pending audio playback', 'success')
 
 						chatHistory.push({ role: 'assistant', content: data.text })
-
-						document.getElementById('response').innerHTML =
-							'<div class="loading-skeleton" id="responseSkeleton"><div class="skeleton-line"></div><div class="skeleton-line"></div><div class="skeleton-line"></div></div>'
 					})
 
 					socket.on('response-complete', (data) => {
@@ -797,11 +789,7 @@
 
 										if (pendingAITranscript) {
 											const responseBox = document.getElementById('response')
-											const skeleton = document.getElementById('responseSkeleton')
-
-											if (skeleton) {
-												skeleton.remove()
-											}
+											hideResponseLoading()
 
 											responseBox.textContent = ''
 											responseBox.textContent = pendingAITranscript
@@ -1048,7 +1036,6 @@
 						updateStatus('Disconnected', 'disconnected')
 						log('Conversation session closed', 'success')
 
-						document.getElementById('connectBtn').disabled = false
 						document.getElementById('recordBtn').disabled = true
 						document.getElementById('finishBtn').disabled = true
 						document.getElementById('stopBtn').disabled = true
@@ -1096,6 +1083,10 @@
 
 				document.getElementById('visualization').classList.remove('active')
 			}
+
+			window.addEventListener('DOMContentLoaded', () => {
+				connect()
+			})
 		</script>
 	</body>
 </html>
