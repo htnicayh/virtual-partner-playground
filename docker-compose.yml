@@ -11,8 +11,9 @@ services:
     environment:
       ENV: production
       PORT: 3000
-      REDIS_HOST: redis
-      REDIS_PORT: 6379
+      REDIS_HOST: ${REDIS_HOST}
+      REDIS_PORT: ${REDIS_PORT}
+      REDIS_URL: ${REDIS_URL}
       OPENAI_API_KEY: ${OPENAI_API_KEY}
       OPENAI_MODEL: ${OPENAI_MODEL}
       OPENAI_MODEL_TTS: ${OPENAI_MODEL_TTS}
