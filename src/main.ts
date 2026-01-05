@@ -44,6 +44,4 @@ bootstrap().catch((e) => {
 	const logger = new Logger('Bootstrap')
 
 	logger.error(e)
-
-	process.exit(1)
 })

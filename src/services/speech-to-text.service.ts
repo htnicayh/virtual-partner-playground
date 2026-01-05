@@ -1,20 +1,18 @@
 import { GoogleGenAI } from '@google/genai'
 import { GoogleGenerativeAI } from '@google/generative-ai'
-import { Injectable, Logger, OnModuleInit } from '@nestjs/common'
+import { Injectable, Logger } from '@nestjs/common'
 import { ConfigService } from '@nestjs/config'
 import * as fs from 'fs'
 import OpenAI from 'openai'
 
 @Injectable()
-export class STTService implements OnModuleInit {
+export class STTService {
 	private readonly logger = new Logger(STTService.name)
-	private openai: OpenAI
-	private google: GoogleGenerativeAI
-	private googleai: GoogleGenAI
+	private readonly openai: OpenAI
+	private readonly google: GoogleGenerativeAI
+	private readonly googleai: GoogleGenAI
 
-	constructor(private readonly configService: ConfigService) {}
-
-	onModuleInit() {
+	constructor(private readonly configService: ConfigService) {
 		const googleApiKey =
 			(this.configService.get<string>('GOOGLE_GEMINI_API_KEY') as string) ?? process.env.GOOGLE_GEMINI_API_KEY
 		const openAIApiKey = (this.configService.get<string>('OPENAI_API_KEY') as string) ?? process.env.OPENAI_API_KEY
