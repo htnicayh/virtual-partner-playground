@@ -1,16 +1,18 @@
 import { GoogleGenerativeAI } from '@google/generative-ai'
-import { Injectable } from '@nestjs/common'
+import { Injectable, OnModuleInit } from '@nestjs/common'
 import { ConfigService } from '@nestjs/config'
 import OpenAI from 'openai'
 import { MessagePayload } from '../commons/interfaces/message-payload.interface'
 
 @Injectable()
-export class LlmService {
-	private readonly openai: OpenAI
-	private readonly gemini: GoogleGenerativeAI
-	private readonly systemPrompt: string
+export class LlmService implements OnModuleInit {
+	private openai: OpenAI
+	private gemini: GoogleGenerativeAI
+	private systemPrompt: string
 
-	constructor(private readonly configService: ConfigService) {
+	constructor(private readonly configService: ConfigService) {}
+
+	onModuleInit() {
 		const googleApiKey =
 			(this.configService.get<string>('GOOGLE_GEMINI_API_KEY') as string) ?? process.env.GOOGLE_GEMINI_API_KEY
 		const openAIApiKey = (this.configService.get<string>('OPENAI_API_KEY') as string) ?? process.env.OPENAI_API_KEY

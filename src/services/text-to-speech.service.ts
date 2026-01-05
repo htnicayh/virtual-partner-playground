@@ -1,5 +1,5 @@
 import { GoogleGenAI } from '@google/genai'
-import { Injectable, Logger } from '@nestjs/common'
+import { Injectable, Logger, OnModuleInit } from '@nestjs/common'
 import { ConfigService } from '@nestjs/config'
 import * as fs from 'fs'
 import OpenAI from 'openai'
@@ -8,16 +8,18 @@ import { WordTiming } from '../commons/interfaces/word-timing.interface'
 import { handleGeminiPlayback } from '../utils'
 
 @Injectable()
-export class TTSService {
+export class TTSService implements OnModuleInit {
 	private readonly logger = new Logger(TTSService.name)
-	private readonly openai: OpenAI
-	private readonly googleai: GoogleGenAI
+	private openai: OpenAI
+	private googleai: GoogleGenAI
 
 	private readonly VOICE = 'alloy'
 	private readonly SPEED = 1.0
 	private readonly AVG_CHARS_PER_MS = 0.08
 
-	constructor(private readonly configService: ConfigService) {
+	constructor(private readonly configService: ConfigService) {}
+
+	onModuleInit() {
 		const openAIApiKey = (this.configService.get<string>('OPENAI_API_KEY') as string) ?? process.env.OPENAI_API_KEY
 		const googleApiKey =
 			(this.configService.get<string>('GOOGLE_GEMINI_API_KEY') as string) ?? process.env.GOOGLE_GEMINI_API_KEY
