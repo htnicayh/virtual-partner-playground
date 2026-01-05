@@ -254,6 +254,33 @@
 				}
 			}
 
+			.loading-skeleton {
+				display: flex;
+				flex-direction: column;
+				gap: 8px;
+			}
+
+			.skeleton-line {
+				height: 12px;
+				background: linear-gradient(90deg, #e0e0e0 25%, #f0f0f0 50%, #e0e0e0 75%);
+				background-size: 200% 100%;
+				border-radius: 4px;
+				animation: loading 1.5s infinite;
+			}
+
+			.skeleton-line:last-child {
+				width: 80%;
+			}
+
+			@keyframes loading {
+				0% {
+					background-position: 200% 0;
+				}
+				100% {
+					background-position: -200% 0;
+				}
+			}
+
 			.metrics {
 				display: grid;
 				grid-template-columns: 1fr 1fr;
@@ -414,7 +441,11 @@
 				<div class="info-section">
 					<div class="section-title">AI Response</div>
 					<div class="response-box" id="response">
-						<span class="empty-text">Waiting for response...</span>
+						<div class="loading-skeleton" id="responseSkeleton">
+							<div class="skeleton-line"></div>
+							<div class="skeleton-line"></div>
+							<div class="skeleton-line"></div>
+						</div>
 					</div>
 				</div>
 
@@ -478,6 +509,7 @@
 			function log(message, type = 'message') {
 				const logsContainer = document.getElementById('logs')
 				const entry = document.createElement('div')
+
 				entry.className = 'log-entry'
 
 				const time = new Date().toLocaleTimeString('en-US', {
@@ -498,10 +530,10 @@
 				}
 
 				entry.innerHTML = html
+
 				logsContainer.appendChild(entry)
 				logsContainer.scrollTop = logsContainer.scrollHeight
 
-				// Store log for server upload
 				clientLogs.push({
 					timestamp: time,
 					level: type.toUpperCase(),
@@ -510,45 +542,11 @@
 				})
 			}
 
-			async function uploadLogsToServer() {
-				try {
-					if (clientLogs.length === 0) {
-						console.log('No logs to upload')
-						return false
-					}
-
-					const response = await fetch(`${HTTP_URL}/logs/save`, {
-						method: 'POST',
-						headers: {
-							'Content-Type': 'application/json'
-						},
-						body: JSON.stringify({ logs: clientLogs })
-					})
-
-					const result = await response.json()
-
-					if (response.ok) {
-						console.log(`✓ Logs uploaded: ${result.filename}`)
-						console.log(`📥 Download: ${result.path}`)
-						clientLogs = [] // Clear after upload
-						return true
-					} else {
-						console.error(`Failed to upload logs: ${result.error}`)
-						return false
-					}
-				} catch (error) {
-					console.error(`Upload logs error: ${error.message}`)
-					return false
-				}
-			}
-
-			// Auto-upload logs before page unload
 			window.addEventListener('beforeunload', async (event) => {
 				log(`[BEFOREUNLOAD] Page about to unload/reload`, 'message')
+
 				if (clientLogs.length > 0) {
 					log(`[BEFOREUNLOAD] Uploading ${clientLogs.length} logs before exit...`, 'message')
-					console.log(`⏳ Uploading ${clientLogs.length} logs before exit...`)
-					await uploadLogsToServer()
 				}
 			})
 
@@ -568,7 +566,6 @@
 				log(`[VISIBILITY] Visibility changed: ${document.hidden ? 'hidden' : 'visible'}`, 'message')
 			})
 
-			// Global error handler
 			window.addEventListener('error', (event) => {
 				log(`[GLOBAL ERROR] ${event.message} at ${event.filename}:${event.lineno}`, 'error')
 			})
@@ -591,6 +588,7 @@
 
 				if (recordingStartTime) {
 					const elapsed = ((Date.now() - recordingStartTime) / 1000).toFixed(1)
+
 					document.getElementById('recordTimeMetric').textContent = elapsed + 's'
 				}
 			}
@@ -601,15 +599,19 @@
 				if (displayedMessages.has(messageKey)) {
 					return
 				}
+
 				displayedMessages.add(messageKey)
 
 				const sidebarMessages = document.getElementById('sidebarMessages')
+
 				if (sidebarMessages.children[0]?.textContent.includes('Start recording')) {
 					sidebarMessages.innerHTML = ''
+
 					displayedMessages.clear()
 				}
 
 				const messageEl = document.createElement('div')
+
 				messageEl.className = `sidebar-message ${role}`
 				messageEl.textContent = text
 
@@ -619,12 +621,31 @@
 
 			function showProcessing(text) {
 				const processing = document.getElementById('processing')
+
 				document.getElementById('processingText').textContent = text
+
 				processing.classList.add('active')
 			}
 
 			function hideProcessing() {
 				document.getElementById('processing').classList.remove('active')
+			}
+
+			function showResponseLoading() {
+				const responseBox = document.getElementById('response')
+				const skeleton = document.getElementById('responseSkeleton')
+
+				if (skeleton) {
+					skeleton.style.display = 'flex'
+				}
+			}
+
+			function hideResponseLoading() {
+				const skeleton = document.getElementById('responseSkeleton')
+
+				if (skeleton) {
+					skeleton.style.display = 'none'
+				}
 			}
 
 			async function connect() {
@@ -642,6 +663,7 @@
 					socket.on('connect', () => {
 						updateStatus('Connected', 'connected')
 						log('Connected to server', 'success')
+
 						document.getElementById('connectBtn').disabled = true
 						document.getElementById('recordBtn').disabled = false
 					})
@@ -649,26 +671,32 @@
 					socket.on('disconnect', () => {
 						updateStatus('Disconnected', 'disconnected')
 						log('Disconnected from server', 'error')
+
 						document.getElementById('connectBtn').disabled = false
 						document.getElementById('recordBtn').disabled = true
 						document.getElementById('finishBtn').disabled = true
 						document.getElementById('stopBtn').disabled = true
+
 						isRecording = false
 					})
 
 					socket.on('disconnect', (reason) => {
 						log(`[DEBUG DISCONNECT] Reason: ${reason}`, 'error')
 						updateStatus('Disconnected', 'disconnected')
+
 						document.getElementById('connectBtn').disabled = false
 						document.getElementById('recordBtn').disabled = true
 						document.getElementById('finishBtn').disabled = true
 						document.getElementById('stopBtn').disabled = true
+
 						isRecording = false
 					})
 
 					socket.on('stream-started', (data) => {
 						log('Stream started', 'success')
+
 						showProcessing('Recording audio...')
+						showResponseLoading()
 					})
 
 					socket.on('chunk-received', (data) => {
@@ -677,21 +705,33 @@
 
 					socket.on('user-transcript', (data) => {
 						document.getElementById('transcript').textContent = data.text
+
 						log('Transcription received', 'success')
+
 						chatHistory.push({ role: 'user', content: data.text })
+
 						addChatMessage(data.text, 'user')
 					})
 
 					socket.on('processing', (data) => {
 						showProcessing(`Processing: ${data.status}`)
+
 						log(`Status: ${data.status}`)
 					})
 
+					let pendingAITranscript = null
+
 					socket.on('ai-response', (data) => {
-						document.getElementById('response').textContent = data.text
-						log('AI response received', 'success')
+						hideResponseLoading()
+
+						pendingAITranscript = data.text
+
+						log('AI response received, transcript pending audio playback', 'success')
+
 						chatHistory.push({ role: 'assistant', content: data.text })
-						addChatMessage(data.text, 'assistant')
+
+						document.getElementById('response').innerHTML =
+							'<div class="loading-skeleton" id="responseSkeleton"><div class="skeleton-line"></div><div class="skeleton-line"></div><div class="skeleton-line"></div></div>'
 					})
 
 					socket.on('response-complete', (data) => {
@@ -754,10 +794,26 @@
 
 									audio.onplay = () => {
 										log('Audio playback started', 'success')
+
+										if (pendingAITranscript) {
+											const responseBox = document.getElementById('response')
+											const skeleton = document.getElementById('responseSkeleton')
+
+											if (skeleton) {
+												skeleton.remove()
+											}
+
+											responseBox.textContent = ''
+											responseBox.textContent = pendingAITranscript
+
+											addChatMessage(pendingAITranscript, 'assistant')
+										}
 									}
 
 									audio.onended = () => {
 										log('Audio playback completed', 'success')
+
+										pendingAITranscript = null
 									}
 
 									audio.onerror = (err) => {
@@ -813,12 +869,16 @@
 					socket.on('stream-cancelled', () => {
 						log('Stream cancelled', 'error')
 						hideProcessing()
+						hideResponseLoading()
 						updateStatus('Connected', 'connected')
+
 						isRecording = false
+
 						document.getElementById('recordBtn').disabled = false
 						document.getElementById('finishBtn').disabled = true
 						document.getElementById('stopBtn').disabled = true
 						document.getElementById('cancelBtn').disabled = true
+
 						stopVisualization()
 					})
 				} catch (error) {
@@ -843,11 +903,14 @@
 
 					const audioContext = new (window.AudioContext || window.webkitAudioContext)()
 					const source = audioContext.createMediaStreamSource(mediaStream)
+
 					analyser = audioContext.createAnalyser()
 					analyser.fftSize = 256
+
 					source.connect(analyser)
 
 					const bufferLength = analyser.frequencyBinCount
+
 					dataArray = new Uint8Array(bufferLength)
 
 					startVisualization()
@@ -872,6 +935,7 @@
 
 							totalBytesSent += uint8Array.length
 							chunksSent++
+
 							updateMetrics()
 						}
 					}
@@ -882,6 +946,7 @@
 					recordingInterval = setInterval(updateMetrics, 100)
 
 					isRecording = true
+
 					updateStatus('Recording', 'recording')
 					log('Recording started', 'success')
 
@@ -899,19 +964,25 @@
 					conversationId = 'conv-' + Date.now()
 					chatHistory = []
 					displayedMessages.clear()
+
 					document.getElementById('stopBtn').disabled = true
 				} catch (error) {
 					log(`Microphone error: ${error.message}`, 'error')
+
 					updateStatus('Microphone Error', 'disconnected')
 				}
 			}
 
 			async function finishRecording() {
-				if (!mediaRecorder || !isRecording) return
+				if (!mediaRecorder || !isRecording) {
+					return
+				}
 
 				try {
 					isRecording = false
+
 					clearInterval(recordingInterval)
+
 					mediaStream.getTracks().forEach((track) => track.stop())
 
 					updateStatus('Processing', 'processing')
@@ -922,7 +993,6 @@
 					document.getElementById('stopBtn').disabled = false
 					document.getElementById('cancelBtn').disabled = true
 
-					// Send final chunk and end stream
 					mediaRecorder.ondataavailable = async (event) => {
 						if (event.data.size > 0) {
 							const buffer = await event.data.arrayBuffer()
@@ -936,6 +1006,7 @@
 							})
 
 							chunksSent++
+
 							updateMetrics()
 							log('Final chunk sent', 'success')
 						}
@@ -943,7 +1014,9 @@
 
 					mediaRecorder.onstop = () => {
 						log('MediaRecorder stopped', 'success')
+
 						socket.emit('end-stream', { sessionId: 'test' })
+
 						log('End stream signal sent', 'success')
 					}
 
@@ -956,20 +1029,25 @@
 			function cancelStream() {
 				if (socket && isRecording) {
 					socket.emit('cancel-stream', { sessionId: 'test' })
+
 					log('Cancel request sent', 'message')
 				}
 			}
 
 			function stopSession() {
 				log('[DEBUG] stopSession() called - manually by user', 'message')
+
 				if (socket) {
 					socket.emit('end-conversation', { conversationId })
+
 					log('End conversation signal sent', 'success')
 
 					setTimeout(() => {
 						socket.disconnect()
+
 						updateStatus('Disconnected', 'disconnected')
 						log('Conversation session closed', 'success')
+
 						document.getElementById('connectBtn').disabled = false
 						document.getElementById('recordBtn').disabled = true
 						document.getElementById('finishBtn').disabled = true
@@ -999,6 +1077,7 @@
 					let x = 0
 
 					canvasCtx.fillStyle = '#667eea'
+
 					for (let i = 0; i < dataArray.length; i++) {
 						const barHeight = (dataArray[i] / 255) * canvas.height
 
@@ -1014,6 +1093,7 @@
 				if (animationId) {
 					cancelAnimationFrame(animationId)
 				}
+
 				document.getElementById('visualization').classList.remove('active')
 			}
 		</script>
