@@ -1,8 +1,7 @@
 import { RedisModule } from '@liaoliaots/nestjs-redis'
 import { Module } from '@nestjs/common'
-import { ConfigModule } from '@nestjs/config'
+import { ConfigModule, ConfigService } from '@nestjs/config'
 import { RouterModule } from '@nestjs/core'
-import { getRedisConfig } from '../config/redis.config'
 import { AudioStreamGateway } from '../gateways/audio-stream.gateway'
 import { AudioService } from '../services/audio.service'
 import { CacheService } from '../services/cache.service'
@@ -47,7 +46,16 @@ import { LogModule } from './log.module'
 				module: LogModule
 			}
 		]),
-		RedisModule.forRoot(getRedisConfig()),
+		RedisModule.forRootAsync({
+			imports: [ConfigModule],
+			inject: [ConfigService],
+			useFactory: (config: ConfigService) => ({
+				config: {
+					host: config.get<string>('REDIS_HOST') ?? process.env.REDIS_HOST,
+					port: Number(config.get<string>('REDIS_PORT') ?? process.env.REDIS_PORT)
+				}
+			})
+		}),
 		LogModule,
 		ChatModule,
 		AudioModule,
