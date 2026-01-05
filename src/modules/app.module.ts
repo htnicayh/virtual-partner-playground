@@ -1,4 +1,4 @@
-import { RedisModule } from '@liaoliaots/nestjs-redis'
+import { RedisModule, RedisModuleOptions } from '@liaoliaots/nestjs-redis'
 import { Module } from '@nestjs/common'
 import { ConfigModule, ConfigService } from '@nestjs/config'
 import { RouterModule } from '@nestjs/core'
@@ -49,11 +49,15 @@ import { LogModule } from './log.module'
 		RedisModule.forRootAsync({
 			imports: [ConfigModule],
 			inject: [ConfigService],
-			useFactory: (config: ConfigService) => ({
-				config: {
-					url: config.get<string>('REDIS_URL') ?? process.env.REDIS_URL
+			useFactory: (configService: ConfigService) => {
+				const url = configService.get<string>('REDIS_URL') ?? process.env.REDIS_URL
+
+				if (!url) {
+					throw new Error('REDIS_URL is not set')
 				}
-			})
+
+				return { config: { url } } as RedisModuleOptions
+			}
 		}),
 		LogModule,
 		ChatModule,
