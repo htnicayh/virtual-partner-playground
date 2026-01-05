@@ -13,8 +13,9 @@ export class STTService {
 	private readonly googleai: GoogleGenAI
 
 	constructor(private readonly configService: ConfigService) {
-		const googleApiKey = this.configService.get<string>('GOOGLE_GEMINI_API_KEY') as string
-		const openAIApiKey = this.configService.get<string>('OPENAI_API_KEY') as string
+		const googleApiKey =
+			(this.configService.get<string>('GOOGLE_GEMINI_API_KEY') as string) ?? process.env.GOOGLE_GEMINI_API_KEY
+		const openAIApiKey = (this.configService.get<string>('OPENAI_API_KEY') as string) ?? process.env.OPENAI_API_KEY
 
 		if (!openAIApiKey) {
 			throw new Error('OPENAI_API_KEY is not set')

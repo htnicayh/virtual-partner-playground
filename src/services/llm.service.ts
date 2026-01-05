@@ -11,7 +11,8 @@ export class LlmService {
 	private systemPrompt: string
 
 	constructor(private readonly configService: ConfigService) {
-		const googleApiKey = this.configService.get<string>('GOOGLE_GEMINI_API_KEY') as string
+		const googleApiKey =
+			(this.configService.get<string>('GOOGLE_GEMINI_API_KEY') as string) ?? process.env.GOOGLE_GEMINI_API_KEY
 
 		this.openai = new OpenAI({
 			apiKey: process.env.OPENAI_API_KEY

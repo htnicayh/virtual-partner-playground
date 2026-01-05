@@ -18,8 +18,9 @@ export class TTSService {
 	private readonly AVG_CHARS_PER_MS = 0.08
 
 	constructor(private readonly configService: ConfigService) {
-		const openAIApiKey = this.configService.get<string>('OPENAI_API_KEY') as string
-		const googleApiKey = this.configService.get<string>('GOOGLE_GEMINI_API_KEY') as string
+		const openAIApiKey = (this.configService.get<string>('OPENAI_API_KEY') as string) ?? process.env.OPENAI_API_KEY
+		const googleApiKey =
+			(this.configService.get<string>('GOOGLE_GEMINI_API_KEY') as string) ?? process.env.GOOGLE_GEMINI_API_KEY
 
 		if (!openAIApiKey) {
 			throw new Error('OPENAI_API_KEY is not set')
