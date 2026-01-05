@@ -10,4 +10,3 @@ export const EVENTS = {
 }
 
 export const EVENTS_EMIT = {}
-export const REDIS_CONNECTION = 'redis://default:pykWeSDaNkfHbfEmPrRsCBGuQcNbizlu@trolley.proxy.rlwy.net:11738'
