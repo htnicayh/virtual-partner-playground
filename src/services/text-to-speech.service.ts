@@ -6,6 +6,7 @@ import OpenAI from 'openai'
 import * as path from 'path'
 import { WordTiming } from '../commons/interfaces/word-timing.interface'
 import { handleGeminiPlayback } from '../utils'
+import { S3Service } from './s3.service'
 
 @Injectable()
 export class TTSService implements OnModuleInit {
@@ -17,7 +18,10 @@ export class TTSService implements OnModuleInit {
 	private readonly SPEED = 1.0
 	private readonly AVG_CHARS_PER_MS = 0.08
 
-	constructor(private readonly configService: ConfigService) {}
+	constructor(
+		private readonly configService: ConfigService,
+		private readonly s3Service: S3Service
+	) {}
 
 	onModuleInit() {
 		const openAIApiKey = (this.configService.get<string>('OPENAI_API_KEY') as string) ?? process.env.OPENAI_API_KEY
@@ -116,16 +120,43 @@ export class TTSService implements OnModuleInit {
 			}
 
 			const buffer = Buffer.from(audioData, 'base64')
-
 			const final = fileName || `audio-gemini-${Date.now()}.mp3`
 			const outputPath = path.join(uploadDir, final)
 
-			fs.mkdirSync(uploadDir, { recursive: true })
-			handleGeminiPlayback(outputPath, buffer)
+			if (!fs.existsSync(uploadDir)) {
+				fs.mkdirSync(uploadDir, { recursive: true })
+			}
+
+			await handleGeminiPlayback(outputPath, buffer)
+
+			const processPath = `${process.cwd()}/${outputPath}`
+			const maxAttempts = 20
+
+			let attempts = 0
+			let fileSize = 0
+
+			while (attempts < maxAttempts && fileSize === 0) {
+				await new Promise((resolve) => setTimeout(resolve, 100))
+
+				if (fs.existsSync(processPath)) {
+					fileSize = fs.statSync(processPath).size
+				}
+
+				attempts++
+			}
 
 			this.logger.log(`Gemini TTS MP3 saved: ${final} (${buffer.length} bytes)`)
+			this.logger.log(`Process path: ${processPath}`)
 
-			return `/uploads/${final}`
+			const wavBuffer = fs.readFileSync(processPath)
+
+			this.logger.log(`WAV saved: ${processPath} (${wavBuffer.length} bytes)`)
+
+			const url = await this.s3Service.uploadWithBuffer(wavBuffer, 'audio/mp3')
+
+			fs.unlinkSync(processPath)
+
+			return url
 		} catch (error) {
 			this.logger.error(`Gemini TTS API failed: ${error.message}`)
 

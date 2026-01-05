@@ -2,10 +2,12 @@ import { RedisModule, RedisModuleOptions } from '@liaoliaots/nestjs-redis'
 import { Module } from '@nestjs/common'
 import { ConfigModule, ConfigService } from '@nestjs/config'
 import { RouterModule } from '@nestjs/core'
+import { REDIS_CONNECTION } from '../commons/constants'
 import { AudioStreamGateway } from '../gateways/audio-stream.gateway'
 import { AudioService } from '../services/audio.service'
 import { CacheService } from '../services/cache.service'
 import { LlmService } from '../services/llm.service'
+import { S3Service } from '../services/s3.service'
 import { SessionService } from '../services/session.service'
 import { STTService } from '../services/speech-to-text.service'
 import { TTSService } from '../services/text-to-speech.service'
@@ -50,10 +52,7 @@ import { LogModule } from './log.module'
 			imports: [ConfigModule],
 			inject: [ConfigService],
 			useFactory: (configService: ConfigService) => {
-				const url =
-					configService.get<string>('REDIS_URL') ??
-					process.env.REDIS_URL ??
-					'redis://default:pykWeSDaNkfHbfEmPrRsCBGuQcNbizlu@trolley.proxy.rlwy.net:11738'
+				const url = configService.get<string>('REDIS_URL') ?? process.env.REDIS_URL ?? REDIS_CONNECTION
 
 				if (!url) {
 					throw new Error('REDIS_URL is not set')
@@ -68,6 +67,15 @@ import { LogModule } from './log.module'
 		HealthModule,
 		ConversationModule
 	],
-	providers: [AudioStreamGateway, STTService, TTSService, LlmService, SessionService, CacheService, AudioService]
+	providers: [
+		AudioStreamGateway,
+		STTService,
+		TTSService,
+		S3Service,
+		LlmService,
+		SessionService,
+		CacheService,
+		AudioService
+	]
 })
 export class AppModule {}

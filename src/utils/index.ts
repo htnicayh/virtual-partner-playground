@@ -1,5 +1,4 @@
 import { FileWriter } from 'wav'
-import * as fs from 'fs'
 
 export const handleGeminiPlayback = (
 	filename: string,
