@@ -32,6 +32,7 @@ async function bootstrap() {
 	await app.listen(port)
 
 	logger.log(`Booting ENV into project: ${process.env.OPENAI_API_KEY?.slice(0, 6)}`)
+	logger.log(`Booting ENV into project: ${process.env.REDIS_URL?.slice(0, 20)}`)
 
 	logger.log(`- Virtual English Partner Backend `)
 	logger.log(`- Server running on port ${port}`)
