@@ -1,0 +1,30 @@
+version: "3.9"
+
+services:
+  backend:
+    build: .
+    container_name: virtual-partner-backend
+    ports:
+      - "3000:3000"
+    depends_on:
+      - redis
+    environment:
+      ENV: production
+      PORT: 3000
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      OPENAI_MODEL: ${OPENAI_MODEL}
+      OPENAI_MODEL_TTS: ${OPENAI_MODEL_TTS}
+      OPENAI_TTS_VOICE: ${OPENAI_TTS_VOICE}
+      GOOGLE_GEMINI_ENPOINT: ${GOOGLE_GEMINI_ENPOINT}
+      GOOGLE_GEMINI_API_KEY: ${GOOGLE_GEMINI_API_KEY}
+      GOOGLE_GEMINI_MODEL: ${GOOGLE_GEMINI_MODEL}
+      GOOGLE_GEMINI_MODEL_TTS: ${GOOGLE_GEMINI_MODEL_TTS}
+      MAX_AUDIO_FILE_SIZE: 52428800
+      UPLOAD_DIR: ${UPLOAD_DIR}
+
+  redis:
+    image: redis:7
+    container_name: virtual-partner-redis
+    restart: always
