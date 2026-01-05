@@ -16,6 +16,14 @@ export class STTService {
 		const googleApiKey = this.configService.get<string>('GOOGLE_GEMINI_API_KEY') as string
 		const openAIApiKey = this.configService.get<string>('OPENAI_API_KEY') as string
 
+		if (!openAIApiKey) {
+			throw new Error('OPENAI_API_KEY is not set')
+		}
+
+		if (!googleApiKey) {
+			throw new Error('GOOGLE_GEMINI_API_KEY is not set')
+		}
+
 		this.openai = new OpenAI({ apiKey: openAIApiKey })
 		this.googleai = new GoogleGenAI({ apiKey: googleApiKey })
 		this.google = new GoogleGenerativeAI(googleApiKey)
