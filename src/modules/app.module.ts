@@ -51,8 +51,7 @@ import { LogModule } from './log.module'
 			inject: [ConfigService],
 			useFactory: (config: ConfigService) => ({
 				config: {
-					host: config.get<string>('REDIS_HOST') ?? process.env.REDIS_HOST,
-					port: Number(config.get<string>('REDIS_PORT') ?? process.env.REDIS_PORT)
+					url: config.get<string>('REDIS_URL') ?? process.env.REDIS_URL
 				}
 			})
 		}),
