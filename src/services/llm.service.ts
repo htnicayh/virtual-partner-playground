@@ -15,11 +15,17 @@ export class LlmService implements OnModuleInit {
 	onModuleInit() {
 		const googleApiKey =
 			(this.configService.get<string>('GOOGLE_GEMINI_API_KEY') as string) ?? process.env.GOOGLE_GEMINI_API_KEY
+		const openAIApiKey = (this.configService.get<string>('OPENAI_API_KEY') as string) ?? process.env.OPENAI_API_KEY
 
-		this.openai = new OpenAI({
-			apiKey: process.env.OPENAI_API_KEY
-		})
+		if (!openAIApiKey) {
+			throw new Error('OPENAI_API_KEY is not set')
+		}
 
+		if (!googleApiKey) {
+			throw new Error('GOOGLE_GEMINI_API_KEY is not set')
+		}
+
+		this.openai = new OpenAI({ apiKey: openAIApiKey })
 		this.gemini = new GoogleGenerativeAI(googleApiKey)
 
 		this.systemPrompt = `You are an English conversation teacher. 

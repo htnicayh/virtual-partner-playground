@@ -2,7 +2,6 @@ import { RedisModule, RedisModuleOptions } from '@liaoliaots/nestjs-redis'
 import { Module } from '@nestjs/common'
 import { ConfigModule, ConfigService } from '@nestjs/config'
 import { RouterModule } from '@nestjs/core'
-import { REDIS_CONNECTION_TEST } from '../commons/constants'
 import { AudioStreamGateway } from '../gateways/audio-stream.gateway'
 import { AudioService } from '../services/audio.service'
 import { CacheService } from '../services/cache.service'
@@ -18,7 +17,7 @@ import { LogModule } from './log.module'
 
 @Module({
 	imports: [
-		ConfigModule.forRoot({ isGlobal: true }),
+		ConfigModule.forRoot({ isGlobal: true, envFilePath: '.env' }),
 		RouterModule.register([
 			{
 				path: '/api',
@@ -51,7 +50,7 @@ import { LogModule } from './log.module'
 			imports: [ConfigModule],
 			inject: [ConfigService],
 			useFactory: (configService: ConfigService) => {
-				const url = configService.get<string>('REDIS_URL') ?? process.env.REDIS_URL ?? REDIS_CONNECTION_TEST
+				const url = configService.get<string>('REDIS_URL') ?? process.env.REDIS_URL
 
 				if (!url) {
 					throw new Error('REDIS_URL is not set')

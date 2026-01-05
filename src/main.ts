@@ -2,12 +2,13 @@ import { Logger, ValidationPipe } from '@nestjs/common'
 import { NestFactory } from '@nestjs/core'
 import * as express from 'express'
 import * as path from 'path'
-import { GLOBAL_PREFIX } from './commons/constants'
 import { AppModule } from './modules/app.module'
 
 async function bootstrap() {
 	const app = await NestFactory.create(AppModule)
 	const logger = new Logger('Resolver')
+
+	app.getHttpAdapter()
 
 	app.enableCors({
 		origin: process.env.CORS_ORIGIN || '*',
@@ -29,7 +30,7 @@ async function bootstrap() {
 
 	const port = process.env.PORT || 3000
 
-	await app.listen(port)
+	await app.listen(port, '0.0.0.0')
 
 	logger.log(`Booting ENV into project: ${process.env.OPENAI_API_KEY?.slice(0, 6)}`)
 	logger.log(`Booting ENV into project: ${process.env.REDIS_URL?.slice(0, 20)}`)
@@ -39,4 +40,10 @@ async function bootstrap() {
 	logger.log(`- WebSocket: ws://localhost:${port}`)
 }
 
-bootstrap().catch(() => process.exit(1))
+bootstrap().catch((e) => {
+	const logger = new Logger('Bootstrap')
+
+	logger.error(e)
+
+	process.exit(1)
+})
