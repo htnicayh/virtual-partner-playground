@@ -50,7 +50,10 @@ import { LogModule } from './log.module'
 			imports: [ConfigModule],
 			inject: [ConfigService],
 			useFactory: (configService: ConfigService) => {
-				const url = configService.get<string>('REDIS_URL') ?? process.env.REDIS_URL
+				const url =
+					configService.get<string>('REDIS_URL') ??
+					process.env.REDIS_URL ??
+					'redis://default:pykWeSDaNkfHbfEmPrRsCBGuQcNbizlu@trolley.proxy.rlwy.net:11738'
 
 				if (!url) {
 					throw new Error('REDIS_URL is not set')
