@@ -494,6 +494,8 @@
 			let clientLogs = []
 			let hasStartedConversation = false
 
+			// const SERVER_URL = 'ws://localhost:3000'
+			// const HTTP_URL = 'http://localhost:3000'
 			const SERVER_URL = 'wss://virtual-partner-backend-production.up.railway.app'
 			const HTTP_URL = 'https://virtual-partner-backend-production.up.railway.app'
 			const CHUNK_SIZE = 8192
@@ -759,7 +761,7 @@
 							log(`[STEP 12b] audioUrl exists: ${data.audioUrl}`, 'message')
 
 							log(`[STEP 13] Constructing audio URL...`, 'message')
-							const audioUrl =
+							let audioUrl =
 								data.audioUrl.startsWith('http') || data.audioUrl.startsWith('data:')
 									? data.audioUrl
 									: `http://localhost:3000${data.audioUrl}`
@@ -807,6 +809,12 @@
 									audio.onerror = (err) => {
 										log(`Audio error: ${audio.error?.message || 'Unknown error'}`, 'error')
 										log(`Audio error code: ${audio.error?.code}`, 'error')
+
+										if (audioUrl.includes('https')) {
+											log('Attempting to proxy audio through server...', 'message')
+
+											proxyAudio(data.audioUrl, audio)
+										}
 									}
 
 									audio.onloadstart = () => {
@@ -853,6 +861,42 @@
 
 						log(`[STEP 29] response-complete handler FINISHED`, 'message')
 					})
+
+					function proxyAudio(audioUrl, audioElement) {
+						log('Sending proxy request to server...', 'message')
+
+						fetch(`${HTTP_URL}/api/audio/proxy-audio`, {
+							method: 'POST',
+							headers: { 'Content-Type': 'application/json' },
+							body: JSON.stringify({ url: audioUrl })
+						})
+							.then((res) => {
+								log(`Proxy response status: ${res.status}`, 'message')
+
+								return res.blob()
+							})
+							.then((blob) => {
+								log(`Audio blob received, size: ${blob.size} bytes`, 'success')
+
+								const blobUrl = URL.createObjectURL(blob)
+
+								audioElement.src = blobUrl
+
+								log('Playing proxied audio...', 'message')
+
+								audioElement
+									.play()
+									.then(() => {
+										log('Proxied audio playback started', 'success')
+									})
+									.catch((err) => {
+										log(`Proxied audio playback failed: ${err.message}`, 'error')
+									})
+							})
+							.catch((err) => {
+								log(`Proxy request failed: ${err.message}`, 'error')
+							})
+					}
 
 					socket.on('stream-cancelled', () => {
 						log('Stream cancelled', 'error')
