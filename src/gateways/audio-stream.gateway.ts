@@ -9,13 +9,14 @@ import {
 	WebSocketServer
 } from '@nestjs/websockets'
 import { Server, Socket } from 'socket.io'
-import { EVENTS } from '../commons/constants'
+import { EVENTS, EVENTS_EMIT } from '../commons/constants'
 import { AudioChunk, EndStream, StartStream } from '../commons/interfaces/message-body.interface'
 import { AudioService } from '../services/audio.service'
 import { CacheService } from '../services/cache.service'
 import { LlmService } from '../services/llm.service'
 import { STTService } from '../services/speech-to-text.service'
 import { TTSService } from '../services/text-to-speech.service'
+
 @WebSocketGateway({
 	cors: {
 		origin: process.env.FRONTEND_URL || '*',
@@ -44,7 +45,7 @@ export class AudioStreamGateway implements OnGatewayConnection, OnGatewayDisconn
 
 		this.logger.log(`[${clientID}] Client connected`)
 
-		client.emit('connection', {
+		client.emit(EVENTS_EMIT.CONNECTION, {
 			status: 'connected',
 			socketId: clientID,
 			timestamp: Date.now()
@@ -87,7 +88,7 @@ export class AudioStreamGateway implements OnGatewayConnection, OnGatewayDisconn
 
 			this.logger.log(`[${clientID}] Stream started: ${mb.userId} / ${mb.conversationId}`)
 
-			client.emit('stream-started', {
+			client.emit(EVENTS_EMIT.STREAM_STARTED, {
 				sessionKey: clientID,
 				status: 'streaming',
 				timestamp: Date.now()
@@ -95,7 +96,7 @@ export class AudioStreamGateway implements OnGatewayConnection, OnGatewayDisconn
 		} catch (e) {
 			this.logger.error(`[${clientID}] Failed to start stream: ${e.message}`)
 
-			client.emit('error', {
+			client.emit(EVENTS_EMIT.ERROR, {
 				code: 'STREAM_START_FAILED',
 				message: e.message
 			})
@@ -110,7 +111,7 @@ export class AudioStreamGateway implements OnGatewayConnection, OnGatewayDisconn
 			const { chunk, chunkIndex, isFinal } = mb
 			const audio = await this.audioService.addAudioChunk(clientID, chunk, chunkIndex)
 
-			client.emit('chunk-received', {
+			client.emit(EVENTS_EMIT.CHUNK_RECEIVED, {
 				chunkIndex: chunkIndex,
 				bytesReceived: audio.totalBytes,
 				duration: Date.now() - audio.startTime,
@@ -123,7 +124,7 @@ export class AudioStreamGateway implements OnGatewayConnection, OnGatewayDisconn
 		} catch (e) {
 			this.logger.error(`[${clientID}] Failed to process chunk: ${e.message}`)
 
-			client.emit('error', {
+			client.emit(EVENTS_EMIT.ERROR, {
 				code: 'CHUNK_FAILED',
 				message: e.message
 			})
@@ -133,7 +134,6 @@ export class AudioStreamGateway implements OnGatewayConnection, OnGatewayDisconn
 	@SubscribeMessage(EVENTS.END_STREAM)
 	async handleEndStream(@ConnectedSocket() client: Socket, @MessageBody() mb: EndStream) {
 		const clientID = client.id
-		const streamType = mb?.streamType || 'sentence'
 
 		try {
 			const processor = this.processors.get(clientID)
@@ -183,7 +183,7 @@ export class AudioStreamGateway implements OnGatewayConnection, OnGatewayDisconn
 
 			this.processors.set(clientID, { processing: false, promise: null })
 
-			client.emit('error', { code: 'STREAM_END_FAILED', message: e.message })
+			client.emit(EVENTS_EMIT.ERROR, { code: 'STREAM_END_FAILED', message: e.message })
 		}
 	}
 
@@ -198,11 +198,11 @@ export class AudioStreamGateway implements OnGatewayConnection, OnGatewayDisconn
 
 			this.processors.delete(client.id)
 
-			client.emit('stream-cancelled', { status: 'cancelled', timestamp: Date.now() })
+			client.emit(EVENTS_EMIT.STREAM_CANCELLED, { status: 'cancelled', timestamp: Date.now() })
 		} catch (e) {
 			this.logger.error(`[${clientID}] Failed to cancel stream: ${e.message}`)
 
-			client.emit('error', { code: 'CANCEL_FAILED', message: e.message })
+			client.emit(EVENTS_EMIT.ERROR, { code: 'CANCEL_FAILED', message: e.message })
 		}
 	}
 
@@ -223,7 +223,7 @@ export class AudioStreamGateway implements OnGatewayConnection, OnGatewayDisconn
 
 			this.logger.debug(`[Cleanup] Session closed: ${client.id}`)
 
-			client.emit('conversation-ended', {
+			client.emit(EVENTS_EMIT.CONVERSATION_ENDED, {
 				status: 'closed',
 				message: 'Conversation session closed',
 				timestamp: Date.now()
@@ -231,7 +231,7 @@ export class AudioStreamGateway implements OnGatewayConnection, OnGatewayDisconn
 		} catch (e) {
 			this.logger.error(`Failed to end conversation: ${e.message}`)
 
-			client.emit('error', {
+			client.emit(EVENTS_EMIT.ERROR, {
 				code: 'CONVERSATION_END_FAILED',
 				message: e.message
 			})
@@ -247,7 +247,7 @@ export class AudioStreamGateway implements OnGatewayConnection, OnGatewayDisconn
 
 			const fullAudioBuffer = await this.audioService.concatenateAudio(clientID)
 
-			client.emit('processing', {
+			client.emit(EVENTS_EMIT.PROCESSING, {
 				status: 'transcribing',
 				timestamp: Date.now()
 			})
@@ -271,12 +271,12 @@ export class AudioStreamGateway implements OnGatewayConnection, OnGatewayDisconn
 				}
 			}
 
-			client.emit('user-transcript', {
+			client.emit(EVENTS_EMIT.USER_TRANSCRIPT, {
 				text: transcript,
 				timestamp: Date.now()
 			})
 
-			client.emit('processing', {
+			client.emit(EVENTS_EMIT.PROCESSING, {
 				status: 'generating-response',
 				timestamp: Date.now()
 			})
@@ -314,9 +314,8 @@ export class AudioStreamGateway implements OnGatewayConnection, OnGatewayDisconn
 				}
 			}
 
-			client.emit('ai-response', { text: aiResponse, timestamp: Date.now() })
-
-			client.emit('processing', { status: 'generating-audio', timestamp: Date.now() })
+			client.emit(EVENTS_EMIT.AI_RESPONSE, { text: aiResponse, timestamp: Date.now() })
+			client.emit(EVENTS_EMIT.PROCESSING, { status: 'Generating respond ...', timestamp: Date.now() })
 
 			this.logger.log(`[${clientID}] Step 16: Calling TTS API...`)
 
@@ -351,7 +350,7 @@ export class AudioStreamGateway implements OnGatewayConnection, OnGatewayDisconn
 			this.logger.log(`[Complete] Response sent in ${processingTime}ms`)
 			this.logger.log(`[DEBUG] About to emit response-complete...`)
 
-			client.emit('response-complete', {
+			client.emit(EVENTS_EMIT.RESPONSE_COMPLETE, {
 				userTranscript: transcript,
 				aiResponse,
 				audioUrl,
@@ -378,7 +377,7 @@ export class AudioStreamGateway implements OnGatewayConnection, OnGatewayDisconn
 
 			this.logger.log(`[DEBUG] Emitting error event...`)
 
-			client.emit('error', {
+			client.emit(EVENTS_EMIT.ERROR, {
 				code: e.code || 'PROCESSING_FAILED',
 				message: e.message,
 				timestamp: Date.now()

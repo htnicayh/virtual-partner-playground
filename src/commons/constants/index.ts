@@ -9,4 +9,15 @@ export const EVENTS = {
 	END_CONVERSATION: 'end-conversation'
 }
 
-export const EVENTS_EMIT = {}
+export const EVENTS_EMIT = {
+	CONNECTION: 'connection',
+	STREAM_STARTED: 'stream-started',
+	ERROR: 'error',
+	CHUNK_RECEIVED: 'chunk-received',
+	STREAM_CANCELLED: 'stream-cancelled',
+	CONVERSATION_ENDED: 'conversation-ended',
+	PROCESSING: 'processing',
+	USER_TRANSCRIPT: 'user-transcript',
+	AI_RESPONSE: 'ai-response',
+	RESPONSE_COMPLETE: 'response-complete'
+}
