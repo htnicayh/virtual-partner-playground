@@ -4,6 +4,7 @@
 		<meta charset="UTF-8" />
 		<meta name="viewport" content="width=device-width, initial-scale=1.0" />
 		<title>Virtual Partner Playground</title>
+		<link rel="icon" href="favicon.png" />
 		<script src="https://cdn.socket.io/4.8.2/socket.io.min.js"></script>
 		<style>
 			* {
@@ -182,15 +183,6 @@
 				background: #da190b;
 			}
 
-			.btn-success {
-				background: #4caf50;
-				color: white;
-			}
-
-			.btn-success:hover:not(:disabled) {
-				background: #388e3c;
-			}
-
 			.info-section {
 				margin-bottom: 25px;
 			}
@@ -205,8 +197,7 @@
 			}
 
 			.transcript-box,
-			.response-box,
-			.timings-box {
+			.response-box {
 				background: #f9f9f9;
 				border: 1px solid #e0e0e0;
 				border-radius: 6px;
@@ -255,34 +246,6 @@
 				}
 			}
 
-			.loading-skeleton {
-				display: flex;
-				flex-direction: column;
-				gap: 8px;
-			}
-
-			.skeleton-line {
-				height: 12px;
-				background: linear-gradient(90deg, #e0e0e0 25%, #f0f0f0 50%, #e0e0e0 75%);
-				background-size: 200% 100%;
-				border-radius: 4px;
-				animation: loading 1.5s infinite;
-			}
-
-			.skeleton-line:last-child {
-				width: 80%;
-			}
-
-			@keyframes loading {
-				0% {
-					background-position: 200% 0;
-				}
-
-				100% {
-					background-position: -200% 0;
-				}
-			}
-
 			.metrics {
 				display: grid;
 				grid-template-columns: 1fr 1fr;
@@ -319,6 +282,11 @@
 				max-height: 200px;
 				overflow-y: auto;
 				margin-top: 20px;
+				display: none;
+			}
+
+			.log-container.dev {
+				display: block;
 			}
 
 			.log-entry {
@@ -345,60 +313,6 @@
 			.log-success {
 				color: #89d185;
 			}
-
-			.audio-visualization {
-				display: none;
-				margin-bottom: 20px;
-			}
-
-			.audio-visualization.active {
-				display: block;
-			}
-
-			canvas {
-				width: 100%;
-				height: 100px;
-				border: 1px solid #e0e0e0;
-				border-radius: 6px;
-				background: #f9f9f9;
-			}
-
-			.btn-warning {
-				background: #ff9800;
-				color: white;
-			}
-
-			.btn-warning:hover:not(:disabled) {
-				background: #f57c00;
-			}
-
-			.chat-display {
-				background: #f5f5f5;
-				border-radius: 6px;
-				padding: 15px;
-				margin-bottom: 20px;
-				max-height: 300px;
-				overflow-y: auto;
-			}
-
-			.chat-display-message {
-				padding: 10px 12px;
-				margin-bottom: 8px;
-				border-radius: 4px;
-				font-size: 13px;
-				line-height: 1.4;
-			}
-
-			.chat-display-message.user {
-				background: #e3f2fd;
-				border-left: 3px solid #667eea;
-				text-align: right;
-			}
-
-			.chat-display-message.assistant {
-				background: #f1f8e9;
-				border-left: 3px solid #4caf50;
-			}
 		</style>
 	</head>
 
@@ -406,22 +320,15 @@
 		<div class="main-content">
 			<div class="container">
 				<h1>Virtual Partner Playground</h1>
-				<p class="subtitle">Live API Duplex Streaming (PCM)</p>
+				<p class="subtitle">Live Duplex Audio Streaming</p>
 
 				<div class="status disconnected" id="status">
 					<span class="status-text" id="statusText">Disconnected</span>
 				</div>
 
 				<div class="controls">
-					<button class="btn-primary" id="recordBtn" onclick="startRecording()" disabled>Record</button>
-					<button class="btn-primary" id="finishBtn" onclick="finishRecording()" disabled>Finish</button>
-					<button class="btn-danger" id="stopBtn" onclick="stopSession()" disabled>Stop</button>
-					<button class="btn-danger" id="cancelBtn" onclick="cancelStream()" disabled>Cancel</button>
-				</div>
-
-				<div class="audio-visualization" id="visualization">
-					<div class="section-title">Audio Waveform</div>
-					<canvas id="audioCanvas"></canvas>
+					<button class="btn-primary" id="recordBtn" onclick="startRecording()" disabled>Start</button>
+					<button class="btn-danger" id="endBtn" onclick="endConversation()" disabled>Finish</button>
 				</div>
 
 				<div class="processing-indicator" id="processing">
@@ -477,6 +384,10 @@
 		</div>
 
 		<script>
+			// Production flag - set to false in production
+			const IS_DEV = false
+			const SERVER_URL = IS_DEV ? 'ws://localhost:3000' : 'wss://virtual-partner-backend-production.up.railway.app'
+
 			let socket = null
 			let audioContext = null
 			let processor = null
@@ -493,9 +404,6 @@
 			let audioOutputContext = null
 			let audioQueue = []
 			let isPlaying = false
-
-			const SERVER_URL = 'ws://localhost:3000'
-			// const SERVER_URL = 'wss://virtual-partner-backend-production.up.railway.app'
 
 			function log(message, type = 'message') {
 				const logsContainer = document.getElementById('logs')
@@ -578,6 +486,40 @@
 				document.getElementById('processing').classList.remove('active')
 			}
 
+			function stopAudioCapture() {
+				isRecording = false
+
+				if (processor) {
+					processor.disconnect()
+					source.disconnect()
+				}
+
+				if (mediaStream) {
+					mediaStream.getTracks().forEach((track) => track.stop())
+				}
+
+				if (audioContext && audioContext.state !== 'closed') {
+					audioContext.close()
+					audioContext = null
+				}
+
+				if (recordingInterval) {
+					clearInterval(recordingInterval)
+				}
+			}
+
+			function resetRecordingState() {
+				recordingStartTime = null
+				totalBytesSent = 0
+				chunksSent = 0
+				updateMetrics()
+			}
+
+			function updateButtonStates(recording) {
+				document.getElementById('recordBtn').disabled = recording
+				document.getElementById('endBtn').disabled = !recording
+			}
+
 			async function playAudioQueue() {
 				while (true) {
 					if (audioQueue.length === 0) {
@@ -639,7 +581,7 @@
 			async function connect() {
 				try {
 					updateStatus('Connecting...', 'processing')
-					log('Attempting to connect to server...')
+					if (IS_DEV) log('Attempting to connect to server...')
 
 					socket = io(SERVER_URL + '/audio', {
 						reconnection: true,
@@ -650,44 +592,43 @@
 
 					socket.on('connect', () => {
 						updateStatus('Connected', 'connected')
-						log('Connected to server', 'success')
+						if (IS_DEV) log('Connected to server', 'success')
 
 						document.getElementById('recordBtn').disabled = false
 					})
 
 					socket.on('disconnect', () => {
 						updateStatus('Disconnected', 'disconnected')
-						log('Disconnected from server', 'error')
+						if (IS_DEV) log('Disconnected from server', 'error')
 
 						document.getElementById('recordBtn').disabled = true
-						document.getElementById('finishBtn').disabled = true
-						document.getElementById('stopBtn').disabled = true
+						document.getElementById('endBtn').disabled = true
 
 						isRecording = false
 					})
 
 					socket.on('live-session-ready', (data) => {
-						log('Live API session ready', 'success')
+						if (IS_DEV) log('Live API session ready', 'success')
 					})
 
 					socket.on('live-audio-chunk', async (data) => {
-						log('Received audio chunk from AI')
+						if (IS_DEV) log('Received audio chunk from AI')
 						audioQueue.push(data.audio)
 					})
 
-					socket.on('live-transcript', (data) => {
+					socket.on('ai-response', (data) => {
 						document.getElementById('response').textContent = data.text
-						log(`AI transcript: "${data.text.substring(0, 50)}..."`, 'success')
+						if (IS_DEV) log(`AI response: "${data.text.substring(0, 50)}..."`, 'success')
 						addChatMessage(data.text, 'assistant')
 					})
 
 					socket.on('live-interrupted', () => {
-						log('AI response interrupted', 'message')
+						if (IS_DEV) log('AI response interrupted', 'message')
 						audioQueue = []
 					})
 
 					socket.on('stream-started', (data) => {
-						log('Stream started', 'success')
+						if (IS_DEV) log('Stream started', 'success')
 						showProcessing('Recording audio...')
 					})
 
@@ -697,35 +638,35 @@
 
 					socket.on('user-transcript', (data) => {
 						document.getElementById('transcript').textContent = data.text
-						log('Transcription received', 'success')
+						if (IS_DEV) log('Transcription received', 'success')
 						addChatMessage(data.text, 'user')
 					})
 
 					socket.on('processing', (data) => {
 						showProcessing(`Processing: ${data.status}`)
-						log(`Status: ${data.status}`)
+						if (IS_DEV) log(`Status: ${data.status}`)
 					})
 
 					socket.onAny((eventName, ...args) => {
-						if (eventName !== 'chunk-received') {
+						if (IS_DEV && eventName !== 'chunk-received') {
 							log(`Event received: ${eventName}`, 'message')
 						}
 					})
 
 					socket.on('error', (data) => {
-						log(`Error: ${data.message}`, 'error')
+						if (IS_DEV) log(`Error: ${data.message}`, 'error')
 						updateStatus(`Error: ${data.code}`, 'disconnected')
 					})
 				} catch (error) {
-					log(`Connection error: ${error.message}`, 'error')
+					if (IS_DEV) log(`Connection error: ${error.message}`, 'error')
 				}
 			}
 
 			async function startRecording() {
 				try {
-					log('Starting recording...')
+					if (IS_DEV) log('Starting recording...')
 
-					// Get mic with PCM settings (like verify-liveapi.js)
+					// Get mic with PCM settings
 					mediaStream = await navigator.mediaDevices.getUserMedia({
 						audio: {
 							channelCount: 1,
@@ -757,7 +698,7 @@
 							pcmData[i] = s < 0 ? s * 0x8000 : s * 0x7fff
 						}
 
-						// Convert to base64 (like verify-liveapi.js)
+						// Convert to base64
 						const buffer = new Uint8Array(pcmData.buffer)
 						const base64 = btoa(String.fromCharCode.apply(null, buffer))
 
@@ -784,157 +725,44 @@
 					recordingStartTime = Date.now()
 					totalBytesSent = 0
 					chunksSent = 0
-
 					isRecording = true
 
 					updateStatus('Recording...', 'recording')
-					log('Recording started (PCM 16kHz mode)', 'success')
+					if (IS_DEV) log('Recording started (PCM 16kHz mode)', 'success')
 
-					document.getElementById('recordBtn').disabled = true
-					document.getElementById('finishBtn').disabled = false
-					document.getElementById('stopBtn').disabled = false
-					document.getElementById('cancelBtn').disabled = false
-
+					updateButtonStates(true)
 					recordingInterval = setInterval(updateMetrics, 1000)
 				} catch (error) {
-					log(`Recording error: ${error.message}`, 'error')
+					if (IS_DEV) log(`Recording error: ${error.message}`, 'error')
 					updateStatus('Recording failed', 'disconnected')
 				}
 			}
 
-			async function finishRecording() {
+			async function endConversation() {
 				try {
-					log('Finishing recording...')
+					if (IS_DEV) log('Ending conversation...')
 
-					isRecording = false
-
-					if (processor) {
-						processor.disconnect()
-						source.disconnect()
-					}
-
-					if (mediaStream) {
-						mediaStream.getTracks().forEach((track) => track.stop())
-					}
-
-					if (audioContext && audioContext.state !== 'closed') {
-						await audioContext.close()
-						audioContext = null
-					}
-
-					if (recordingInterval) {
-						clearInterval(recordingInterval)
-					}
-
-					socket.emit('end-stream', {})
+					stopAudioCapture()
+					socket.emit('end-conversation', { conversationId: conversationId })
 
 					updateStatus('Connected', 'connected')
-					log('Recording finished', 'success')
+					if (IS_DEV) log('Conversation ended', 'success')
 
-					document.getElementById('recordBtn').disabled = false
-					document.getElementById('finishBtn').disabled = true
-					document.getElementById('stopBtn').disabled = false
-					document.getElementById('cancelBtn').disabled = true
-
-					recordingStartTime = null
+					updateButtonStates(false)
+					resetRecordingState()
+					hideProcessing()
 				} catch (error) {
-					log(`Finish error: ${error.message}`, 'error')
-				}
-			}
-
-			async function stopSession() {
-				try {
-					log('Stopping session...')
-
-					isRecording = false
-
-					if (processor) {
-						processor.disconnect()
-						source.disconnect()
-					}
-
-					if (mediaStream) {
-						mediaStream.getTracks().forEach((track) => track.stop())
-					}
-
-					if (audioContext && audioContext.state !== 'closed') {
-						await audioContext.close()
-						audioContext = null
-					}
-
-					if (recordingInterval) {
-						clearInterval(recordingInterval)
-					}
-
-					await new Promise((resolve) => setTimeout(resolve, 100))
-
-					socket.emit('end-conversation', {
-						conversationId: conversationId
-					})
-
-					updateStatus('Connected', 'connected')
-					log('Session stopped', 'success')
-
-					document.getElementById('recordBtn').disabled = false
-					document.getElementById('finishBtn').disabled = true
-					document.getElementById('stopBtn').disabled = true
-					document.getElementById('cancelBtn').disabled = true
-
-					recordingStartTime = null
-					totalBytesSent = 0
-					chunksSent = 0
-					updateMetrics()
-				} catch (error) {
-					log(`Stop error: ${error.message}`, 'error')
-				}
-			}
-
-			async function cancelStream() {
-				try {
-					log('Cancelling stream...')
-
-					isRecording = false
-
-					if (processor) {
-						processor.disconnect()
-						source.disconnect()
-					}
-
-					if (mediaStream) {
-						mediaStream.getTracks().forEach((track) => track.stop())
-					}
-
-					if (audioContext && audioContext.state !== 'closed') {
-						await audioContext.close()
-						audioContext = null
-					}
-
-					if (recordingInterval) {
-						clearInterval(recordingInterval)
-					}
-
-					await new Promise((resolve) => setTimeout(resolve, 100))
-
-					socket.emit('cancel-stream', {
-						sessionId: 'session-' + Date.now()
-					})
-
-					updateStatus('Connected', 'connected')
-					log('Stream cancelled', 'success')
-
-					document.getElementById('recordBtn').disabled = false
-					document.getElementById('finishBtn').disabled = true
-					document.getElementById('stopBtn').disabled = false
-					document.getElementById('cancelBtn').disabled = true
-
-					recordingStartTime = null
-				} catch (error) {
-					log(`Cancel error: ${error.message}`, 'error')
+					if (IS_DEV) log(`End conversation error: ${error.message}`, 'error')
 				}
 			}
 
 			window.addEventListener('load', () => {
-				log('Page loaded')
+				// Setup dev mode for logs
+				const logsContainer = document.getElementById('logs')
+				if (IS_DEV) {
+					logsContainer.classList.add('dev')
+					log('Page loaded')
+				}
 				connect()
 				setInterval(updateMetrics, 1000)
 			})
