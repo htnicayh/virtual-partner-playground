@@ -263,18 +263,11 @@ Keep responses conversational and encouraging.`
 			// Handle model response turn
 			if (message.serverContent?.modelTurn?.parts) {
 				const parts = message.serverContent.modelTurn.parts
-
-				let transcriptText = ''
 				let hasAudio = false
 
 				this.logger.debug(`[${clientID}] Model turn has ${parts.length} parts`)
 
 				for (const part of parts) {
-					// Extract text from model response
-					if (part.text) {
-						transcriptText += part.text
-					}
-
 					// Extract audio from model response
 					if (part.inlineData?.data) {
 						const audioBuffer = Buffer.from(part.inlineData.data, 'base64')
@@ -291,29 +284,8 @@ Keep responses conversational and encouraging.`
 					}
 				}
 
-				// Emit AI transcript
-				if (transcriptText.trim()) {
-					client.emit(EVENTS_EMIT.LIVE_TRANSCRIPT, {
-						text: transcriptText.trim(),
-						timestamp: Date.now()
-					})
-
-					client.emit(EVENTS_EMIT.AI_RESPONSE, {
-						text: transcriptText.trim(),
-						timestamp: Date.now()
-					})
-
-					this.logger.log(`[${clientID}] AI Transcript emitted: "${transcriptText.substring(0, 50)}..."`)
-				}
-
-				// Emit when turn is complete
-				if (message.serverContent.turnComplete) {
-					client.emit(EVENTS_EMIT.RESPONSE_COMPLETE, {
-						aiResponse: transcriptText.trim(),
-						hasAudio,
-						timestamp: Date.now()
-					})
-				}
+				// Note: Don't emit text from modelTurn - it's just thinking process
+				// Wait for outputTranscription instead
 			}
 
 			// Handle user content with outputTranscription
@@ -340,6 +312,13 @@ Keep responses conversational and encouraging.`
 					text: outputTranscriptionText,
 					timestamp: Date.now()
 				})
+
+				if (message.serverContent.turnComplete) {
+					client.emit(EVENTS_EMIT.RESPONSE_COMPLETE, {
+						aiResponse: outputTranscriptionText,
+						timestamp: Date.now()
+					})
+				}
 			}
 		} catch (error) {
 			this.logger.error(`[${clientID}] Error handling Live API message: ${(error as Error).message}`)
