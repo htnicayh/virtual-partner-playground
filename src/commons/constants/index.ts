@@ -23,5 +23,6 @@ export const EVENTS_EMIT = {
 	LIVE_AUDIO_CHUNK: 'live-audio-chunk',
 	LIVE_TRANSCRIPT: 'live-transcript',
 	LIVE_INTERRUPTED: 'live-interrupted',
-	LIVE_SESSION_READY: 'live-session-ready'
+	LIVE_SESSION_READY: 'live-session-ready',
+	AI_AUDIO_COMPLETE: 'ai-audio-complete'
 }

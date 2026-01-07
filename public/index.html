@@ -15,8 +15,8 @@
 
 			body {
 				font-family:
-					-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu', 'Cantarell', 'Fira Sans',
-					'Droid Sans', 'Helvetica Neue', sans-serif;
+					-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Fira Sans', 'Droid Sans',
+					'Helvetica Neue', sans-serif;
 				background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
 				min-height: 100vh;
 				display: flex;
@@ -114,17 +114,14 @@
 				border-left-color: #4caf50;
 				background: #e8f5e9;
 			}
-
 			.status.disconnected {
 				border-left-color: #f44336;
 				background: #ffebee;
 			}
-
 			.status.recording {
 				border-left-color: #ff9800;
 				background: #fff3e0;
 			}
-
 			.status.processing {
 				border-left-color: #2196f3;
 				background: #e3f2fd;
@@ -169,16 +166,13 @@
 				background: #667eea;
 				color: white;
 			}
-
 			.btn-primary:hover:not(:disabled) {
 				background: #5568d3;
 			}
-
 			.btn-danger {
 				background: #f44336;
 				color: white;
 			}
-
 			.btn-danger:hover:not(:disabled) {
 				background: #da190b;
 			}
@@ -240,7 +234,6 @@
 				0% {
 					transform: rotate(0deg);
 				}
-
 				100% {
 					transform: rotate(360deg);
 				}
@@ -301,15 +294,12 @@
 			.log-time {
 				color: #858585;
 			}
-
 			.log-message {
 				color: #d4d4d4;
 			}
-
 			.log-error {
 				color: #f48771;
 			}
-
 			.log-success {
 				color: #89d185;
 			}
@@ -376,7 +366,7 @@
 			</div>
 
 			<div class="chat-sidebar">
-				<div class="sidebar-title">💬 Chat History</div>
+				<div class="sidebar-title">Chat History</div>
 				<div class="sidebar-messages" id="sidebarMessages">
 					<p style="text-align: center; color: #999; font-size: 12px">Start recording to see messages...</p>
 				</div>
@@ -384,8 +374,7 @@
 		</div>
 
 		<script>
-			// Production flag - set to false in production
-			const IS_DEV = true
+			const IS_DEV = false
 			const SERVER_URL = IS_DEV ? 'ws://localhost:3000' : 'wss://virtual-partner-backend-production.up.railway.app'
 
 			let socket = null
@@ -402,13 +391,11 @@
 			let conversationId = null
 
 			let audioOutputContext = null
-			let audioQueue = []
-			let isPlaying = false
+			let currentSource = null
 
 			function log(message, type = 'message') {
 				const logsContainer = document.getElementById('logs')
 				const entry = document.createElement('div')
-
 				entry.className = 'log-entry'
 
 				const time = new Date().toLocaleTimeString('en-US', {
@@ -417,19 +404,13 @@
 					minute: '2-digit',
 					second: '2-digit'
 				})
-
 				let html = `<span class="log-time">${time}</span> `
 
-				if (type === 'error') {
-					html += `<span class="log-error">❌ ${message}</span>`
-				} else if (type === 'success') {
-					html += `<span class="log-success">✓ ${message}</span>`
-				} else {
-					html += `<span class="log-message">→ ${message}</span>`
-				}
+				if (type === 'error') html += `<span class="log-error">❌ ${message}</span>`
+				else if (type === 'success') html += `<span class="log-success">✓ ${message}</span>`
+				else html += `<span class="log-message">→ ${message}</span>`
 
 				entry.innerHTML = html
-
 				logsContainer.appendChild(entry)
 				logsContainer.scrollTop = logsContainer.scrollHeight
 			}
@@ -437,7 +418,6 @@
 			function updateStatus(text, type) {
 				const statusEl = document.getElementById('status')
 				const statusText = document.getElementById('statusText')
-
 				statusEl.className = `status ${type}`
 				statusText.textContent = text
 			}
@@ -445,7 +425,6 @@
 			function updateMetrics() {
 				document.getElementById('bytesMetric').textContent = (totalBytesSent / 1024).toFixed(2) + ' KB'
 				document.getElementById('chunksMetric').textContent = chunksSent
-
 				if (recordingStartTime) {
 					const elapsed = ((Date.now() - recordingStartTime) / 1000).toFixed(1)
 					document.getElementById('recordTimeMetric').textContent = elapsed + 's'
@@ -453,33 +432,27 @@
 			}
 
 			function addChatMessage(text, role) {
-				const messageKey = `${role}:${text}`
+				const key = `${role}:${text}`
+				if (displayedMessages.has(key)) return
+				displayedMessages.add(key)
 
-				if (displayedMessages.has(messageKey)) {
-					return
-				}
-
-				displayedMessages.add(messageKey)
-
-				const sidebarMessages = document.getElementById('sidebarMessages')
-
-				if (sidebarMessages.children[0]?.textContent.includes('Start recording')) {
-					sidebarMessages.innerHTML = ''
+				const container = document.getElementById('sidebarMessages')
+				if (container.children[0]?.textContent.includes('Start recording')) {
+					container.innerHTML = ''
 					displayedMessages.clear()
 				}
 
-				const messageEl = document.createElement('div')
-				messageEl.className = `sidebar-message ${role}`
-				messageEl.textContent = text
-
-				sidebarMessages.appendChild(messageEl)
-				sidebarMessages.scrollTop = sidebarMessages.scrollHeight
+				const el = document.createElement('div')
+				el.className = `sidebar-message ${role}`
+				el.textContent = text
+				container.appendChild(el)
+				container.scrollTop = container.scrollHeight
 			}
 
 			function showProcessing(text) {
-				const processing = document.getElementById('processing')
+				const indicator = document.getElementById('processing')
 				document.getElementById('processingText').textContent = text
-				processing.classList.add('active')
+				indicator.classList.add('active')
 			}
 
 			function hideProcessing() {
@@ -488,24 +461,14 @@
 
 			function stopAudioCapture() {
 				isRecording = false
-
 				if (processor) {
 					processor.disconnect()
 					source.disconnect()
 				}
-
-				if (mediaStream) {
-					mediaStream.getTracks().forEach((track) => track.stop())
-				}
-
-				if (audioContext && audioContext.state !== 'closed') {
-					audioContext.close()
-					audioContext = null
-				}
-
-				if (recordingInterval) {
-					clearInterval(recordingInterval)
-				}
+				if (mediaStream) mediaStream.getTracks().forEach((track) => track.stop())
+				if (audioContext && audioContext.state !== 'closed') audioContext.close()
+				if (recordingInterval) clearInterval(recordingInterval)
+				audioContext = processor = source = mediaStream = null
 			}
 
 			function resetRecordingState() {
@@ -520,153 +483,130 @@
 				document.getElementById('endBtn').disabled = !recording
 			}
 
-			async function playAudioQueue() {
-				while (true) {
-					if (audioQueue.length === 0) {
-						isPlaying = false
-						await new Promise((resolve) => setTimeout(resolve, 50))
-						continue
-					}
-
-					if (!audioOutputContext) {
-						audioOutputContext = new (window.AudioContext || window.webkitAudioContext)({
-							sampleRate: 24000
-						})
-					}
-
-					isPlaying = true
-					const base64Audio = audioQueue.shift()
-
-					try {
-						// Decode base64 to Int16 PCM
-						const binaryString = atob(base64Audio)
-						const bytes = new Uint8Array(binaryString.length)
-
-						for (let i = 0; i < binaryString.length; i++) {
-							bytes[i] = binaryString.charCodeAt(i)
-						}
-
-						// Convert Int16 to Float32 for AudioContext
-						const int16Array = new Int16Array(bytes.buffer)
-						const float32Array = new Float32Array(int16Array.length)
-
-						for (let i = 0; i < int16Array.length; i++) {
-							float32Array[i] = int16Array[i] / 32768.0
-						}
-
-						// Create and play audio buffer
-						const audioBuffer = audioOutputContext.createBuffer(1, float32Array.length, 24000)
-
-						audioBuffer.getChannelData(0).set(float32Array)
-
-						const source = audioOutputContext.createBufferSource()
-
-						source.buffer = audioBuffer
-						source.connect(audioOutputContext.destination)
-
-						// Wait for playback to complete
-						await new Promise((resolve) => {
-							source.onended = resolve
-							source.start()
-						})
-					} catch (e) {
-						log(`Audio playback error: ${e.message}`, 'error')
-					}
+			function initAudioContext() {
+				if (!audioOutputContext || audioOutputContext.state === 'closed') {
+					audioOutputContext = new (window.AudioContext || window.webkitAudioContext)({
+						sampleRate: 24000,
+						latencyHint: 'playback'
+					})
 				}
 			}
 
-			// Start playback loop
-			playAudioQueue()
+			function playFullAIResponse(audioChunksBase64) {
+				if (!audioChunksBase64 || audioChunksBase64.length === 0) return
+
+				initAudioContext()
+
+				let totalSamples = 0
+				const int16Arrays = []
+
+				for (const base64 of audioChunksBase64) {
+					const binary = atob(base64)
+					const bytes = new Uint8Array(binary.length)
+					for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i)
+					const int16 = new Int16Array(bytes.buffer)
+					int16Arrays.push(int16)
+					totalSamples += int16.length
+				}
+
+				const buffer = audioOutputContext.createBuffer(1, totalSamples, 24000)
+				const channelData = buffer.getChannelData(0)
+
+				let offset = 0
+				for (const arr of int16Arrays) {
+					for (let i = 0; i < arr.length; i++) {
+						channelData[offset++] = arr[i] / 32768.0
+					}
+				}
+
+				if (currentSource) {
+					try {
+						currentSource.stop()
+					} catch (_) {}
+				}
+
+				currentSource = audioOutputContext.createBufferSource()
+				currentSource.buffer = buffer
+				currentSource.connect(audioOutputContext.destination)
+				currentSource.start()
+
+				currentSource.onended = () => {
+					currentSource = null
+				}
+			}
 
 			async function connect() {
-				try {
-					updateStatus('Connecting...', 'processing')
-					if (IS_DEV) log('Attempting to connect to server...')
+				updateStatus('Connecting...', 'processing')
+				if (IS_DEV) log('Attempting to connect to server...')
 
-					socket = io(SERVER_URL + '/audio', {
-						reconnection: true,
-						reconnectionDelay: 1000,
-						reconnectionDelayMax: 5000,
-						reconnectionAttempts: 5
-					})
+				socket = io(SERVER_URL + '/audio', {
+					reconnection: true,
+					reconnectionDelay: 1000,
+					reconnectionDelayMax: 5000,
+					reconnectionAttempts: 5
+				})
 
-					socket.on('connect', () => {
-						updateStatus('Connected', 'connected')
-						if (IS_DEV) log('Connected to server', 'success')
+				socket.on('connect', () => {
+					updateStatus('Connected', 'connected')
+					if (IS_DEV) log('Connected to server', 'success')
+					document.getElementById('recordBtn').disabled = false
+				})
 
-						document.getElementById('recordBtn').disabled = false
-					})
+				socket.on('disconnect', () => {
+					updateStatus('Disconnected', 'disconnected')
+					if (IS_DEV) log('Disconnected from server', 'error')
+					document.getElementById('recordBtn').disabled = true
+					document.getElementById('endBtn').disabled = true
+					isRecording = false
+				})
 
-					socket.on('disconnect', () => {
-						updateStatus('Disconnected', 'disconnected')
-						if (IS_DEV) log('Disconnected from server', 'error')
+				socket.on('live-session-ready', () => {
+					if (IS_DEV) log('Live API session ready', 'success')
+				})
 
-						document.getElementById('recordBtn').disabled = true
-						document.getElementById('endBtn').disabled = true
+				socket.on('ai-response', (data) => {
+					document.getElementById('response').textContent = data.text
+					if (data.isFinal) addChatMessage(data.text, 'assistant')
+				})
 
-						isRecording = false
-					})
+				socket.on('ai-audio-complete', (data) => {
+					playFullAIResponse(data.audioChunks)
+				})
 
-					socket.on('live-session-ready', (data) => {
-						if (IS_DEV) log('Live API session ready', 'success')
-					})
+				socket.on('live-interrupted', () => {
+					if (IS_DEV) log('AI interrupted')
+					if (currentSource) {
+						try {
+							currentSource.stop()
+						} catch (_) {}
+						currentSource = null
+					}
+				})
 
-					socket.on('live-audio-chunk', async (data) => {
-						if (IS_DEV) log('Received audio chunk from AI')
-						audioQueue.push(data.audio)
-					})
+				socket.on('stream-started', () => {
+					if (IS_DEV) log('Stream started', 'success')
+					showProcessing('Recording audio...')
+				})
 
-					socket.on('ai-response', (data) => {
-						document.getElementById('response').textContent = data.text
-						if (IS_DEV) log(`AI response: "${data.text.substring(0, 50)}..."`, 'success')
-						addChatMessage(data.text, 'assistant')
-					})
+				socket.on('user-transcript', (data) => {
+					document.getElementById('transcript').textContent = data.text
+					addChatMessage(data.text, 'user')
+				})
 
-					socket.on('live-interrupted', () => {
-						if (IS_DEV) log('AI response interrupted', 'message')
-						audioQueue = []
-					})
+				socket.on('processing', (data) => {
+					showProcessing(`Processing: ${data.status}`)
+				})
 
-					socket.on('stream-started', (data) => {
-						if (IS_DEV) log('Stream started', 'success')
-						showProcessing('Recording audio...')
-					})
-
-					socket.on('chunk-received', (data) => {
-						// Silent
-					})
-
-					socket.on('user-transcript', (data) => {
-						document.getElementById('transcript').textContent = data.text
-						if (IS_DEV) log('Transcription received', 'success')
-						addChatMessage(data.text, 'user')
-					})
-
-					socket.on('processing', (data) => {
-						showProcessing(`Processing: ${data.status}`)
-						if (IS_DEV) log(`Status: ${data.status}`)
-					})
-
-					socket.onAny((eventName, ...args) => {
-						if (IS_DEV && eventName !== 'chunk-received') {
-							log(`Event received: ${eventName}`, 'message')
-						}
-					})
-
-					socket.on('error', (data) => {
-						if (IS_DEV) log(`Error: ${data.message}`, 'error')
-						updateStatus(`Error: ${data.code}`, 'disconnected')
-					})
-				} catch (error) {
-					if (IS_DEV) log(`Connection error: ${error.message}`, 'error')
-				}
+				socket.on('error', (data) => {
+					if (IS_DEV) log(`Error: ${data.message}`, 'error')
+					updateStatus(`Error: ${data.code}`, 'disconnected')
+				})
 			}
 
 			async function startRecording() {
 				try {
 					if (IS_DEV) log('Starting recording...')
 
-					// Get mic with PCM settings
 					mediaStream = await navigator.mediaDevices.getUserMedia({
 						audio: {
 							channelCount: 1,
@@ -676,37 +616,25 @@
 						}
 					})
 
-					// Create AudioContext at 16kHz
-					audioContext = new (window.AudioContext || window.webkitAudioContext)({
-						sampleRate: 16000
-					})
-
+					audioContext = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 16000 })
 					source = audioContext.createMediaStreamSource(mediaStream)
 					processor = audioContext.createScriptProcessor(4096, 1, 1)
 
 					let chunkIndex = 0
-
 					processor.onaudioprocess = (e) => {
 						if (!isRecording) return
 
-						const inputData = e.inputBuffer.getChannelData(0)
-
-						// Convert Float32 to Int16 PCM
-						const pcmData = new Int16Array(inputData.length)
-						for (let i = 0; i < inputData.length; i++) {
-							const s = Math.max(-1, Math.min(1, inputData[i]))
-							pcmData[i] = s < 0 ? s * 0x8000 : s * 0x7fff
+						const input = e.inputBuffer.getChannelData(0)
+						const pcm = new Int16Array(input.length)
+						for (let i = 0; i < input.length; i++) {
+							const s = Math.max(-1, Math.min(1, input[i]))
+							pcm[i] = s < 0 ? s * 0x8000 : s * 0x7fff
 						}
 
-						// Convert to base64
-						const buffer = new Uint8Array(pcmData.buffer)
-						const base64 = btoa(String.fromCharCode.apply(null, buffer))
+						const buffer = new Uint8Array(pcm.buffer)
+						const base64 = btoa(String.fromCharCode(...buffer))
 
-						socket.emit('audio-chunk', {
-							chunk: base64,
-							chunkIndex: chunkIndex++
-						})
-
+						socket.emit('audio-chunk', { chunk: base64, chunkIndex: chunkIndex++ })
 						totalBytesSent += buffer.length
 						chunksSent++
 					}
@@ -715,52 +643,36 @@
 					processor.connect(audioContext.destination)
 
 					conversationId = 'conv-' + Date.now()
-
 					socket.emit('start-stream', {
 						userId: 'user-' + Date.now(),
 						sessionId: 'session-' + Date.now(),
-						conversationId: conversationId
+						conversationId
 					})
 
 					recordingStartTime = Date.now()
-					totalBytesSent = 0
-					chunksSent = 0
 					isRecording = true
-
 					updateStatus('Recording...', 'recording')
-					if (IS_DEV) log('Recording started (PCM 16kHz mode)', 'success')
-
 					updateButtonStates(true)
 					recordingInterval = setInterval(updateMetrics, 1000)
-				} catch (error) {
-					if (IS_DEV) log(`Recording error: ${error.message}`, 'error')
+				} catch (err) {
+					if (IS_DEV) log(`Recording error: ${err.message}`, 'error')
 					updateStatus('Recording failed', 'disconnected')
 				}
 			}
 
-			async function endConversation() {
-				try {
-					if (IS_DEV) log('Ending conversation...')
-
-					stopAudioCapture()
-					socket.emit('end-conversation', { conversationId: conversationId })
-
-					updateStatus('Connected', 'connected')
-					if (IS_DEV) log('Conversation ended', 'success')
-
-					updateButtonStates(false)
-					resetRecordingState()
-					hideProcessing()
-				} catch (error) {
-					if (IS_DEV) log(`End conversation error: ${error.message}`, 'error')
-				}
+			function endConversation() {
+				if (IS_DEV) log('Ending conversation...')
+				stopAudioCapture()
+				socket.emit('end-conversation', { conversationId })
+				updateStatus('Connected', 'connected')
+				updateButtonStates(false)
+				resetRecordingState()
+				hideProcessing()
 			}
 
 			window.addEventListener('load', () => {
-				// Setup dev mode for logs
-				const logsContainer = document.getElementById('logs')
 				if (IS_DEV) {
-					logsContainer.classList.add('dev')
+					document.getElementById('logs').classList.add('dev')
 					log('Page loaded')
 				}
 				connect()
@@ -768,9 +680,7 @@
 			})
 
 			window.addEventListener('beforeunload', () => {
-				if (socket) {
-					socket.disconnect()
-				}
+				if (socket) socket.disconnect()
 			})
 		</script>
 	</body>
