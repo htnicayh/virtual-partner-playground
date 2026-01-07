@@ -19,5 +19,10 @@ export const EVENTS_EMIT = {
 	PROCESSING: 'processing',
 	USER_TRANSCRIPT: 'user-transcript',
 	AI_RESPONSE: 'ai-response',
-	RESPONSE_COMPLETE: 'response-complete'
+	RESPONSE_COMPLETE: 'response-complete',
+	LIVE_AUDIO_CHUNK: 'live-audio-chunk',
+	LIVE_TRANSCRIPT: 'live-transcript',
+	LIVE_INTERRUPTED: 'live-interrupted',
+	LIVE_SESSION_READY: 'live-session-ready',
+	AI_AUDIO_COMPLETE: 'ai-audio-complete'
 }
