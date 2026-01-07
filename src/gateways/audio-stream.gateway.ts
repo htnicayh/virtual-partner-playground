@@ -1,5 +1,6 @@
-import { Modality } from '@google/genai'
+import { LiveServerMessage, Modality } from '@google/genai'
 import { Injectable, Logger } from '@nestjs/common'
+import { ConfigService } from '@nestjs/config'
 import {
 	ConnectedSocket,
 	MessageBody,
@@ -11,7 +12,7 @@ import {
 } from '@nestjs/websockets'
 import { Server, Socket } from 'socket.io'
 import { EVENTS, EVENTS_EMIT } from '../commons/constants'
-import { LiveAPIConfig, LiveAPIMessage } from '../commons/interfaces/live-api.interface'
+import { LiveAPIConfig } from '../commons/interfaces/live-api.interface'
 import { AudioChunk, EndStream, StartStream } from '../commons/interfaces/message-body.interface'
 import { AudioService } from '../services/audio.service'
 import { CacheService } from '../services/cache.service'
@@ -29,11 +30,13 @@ export class AudioStreamGateway implements OnGatewayConnection, OnGatewayDisconn
 	private readonly logger = new Logger(AudioStreamGateway.name)
 
 	private readonly systemInstruction: string
+	private readonly geminiModel: string
 
 	@WebSocketServer()
 	server: Server
 
 	constructor(
+		private readonly configService: ConfigService,
 		private readonly audioService: AudioService,
 		private readonly cacheService: CacheService,
 		private readonly llmService: LlmService
@@ -47,6 +50,9 @@ Your role is to:
 5. Ask follow-up questions to encourage dialogue
 6. Adapt your level to the user's proficiency level
 Keep responses conversational and encouraging.`
+
+		this.geminiModel =
+			this.configService.get<string>('GOOGLE_GEMINI_MODEL') || (process.env.GOOGLE_GEMINI_MODEL as string)
 	}
 
 	async handleConnection(client: Socket) {
@@ -90,15 +96,17 @@ Keep responses conversational and encouraging.`
 			this.logger.log(`[${clientID}] Creating Live API session for ${mb.userId}`)
 
 			const config: LiveAPIConfig = {
-				model: 'gemini-2.0-flash-exp',
+				model: this.geminiModel,
 				responseModalities: [Modality.AUDIO],
-				systemInstruction: this.systemInstruction
+				systemInstruction: this.systemInstruction,
+				inputAudioTranscription: {},
+				outputAudioTranscription: {}
 			}
 
 			await this.llmService.createLiveSession(
 				clientID,
 				config,
-				(message: LiveAPIMessage) => this.handleLiveAPIMessage(client, message),
+				(message: LiveServerMessage) => this.handleLiveAPIMessage(client, message),
 				(error: Error) => this.handleLiveAPIError(client, error),
 				(reason: string) => this.handleLiveAPIClose(client, reason)
 			)
@@ -236,11 +244,11 @@ Keep responses conversational and encouraging.`
 		}
 	}
 
-	private handleLiveAPIMessage(client: Socket, message: LiveAPIMessage) {
+	private handleLiveAPIMessage(client: Socket, message: LiveServerMessage) {
 		const clientID = client.id
 
 		try {
-			this.logger.debug(`[${clientID}] Processing Live API message: ${JSON.stringify(message).substring(0, 500)}`)
+			this.logger.debug(`[${clientID}] Processing Live API message`)
 
 			if (message.serverContent?.interrupted) {
 				this.logger.log(`[${clientID}] Live API interrupted`)
@@ -252,6 +260,7 @@ Keep responses conversational and encouraging.`
 				return
 			}
 
+			// Handle model response turn
 			if (message.serverContent?.modelTurn?.parts) {
 				const parts = message.serverContent.modelTurn.parts
 
@@ -261,10 +270,12 @@ Keep responses conversational and encouraging.`
 				this.logger.debug(`[${clientID}] Model turn has ${parts.length} parts`)
 
 				for (const part of parts) {
+					// Extract text from model response
 					if (part.text) {
 						transcriptText += part.text
 					}
 
+					// Extract audio from model response
 					if (part.inlineData?.data) {
 						const audioBuffer = Buffer.from(part.inlineData.data, 'base64')
 
@@ -280,6 +291,7 @@ Keep responses conversational and encouraging.`
 					}
 				}
 
+				// Emit AI transcript
 				if (transcriptText.trim()) {
 					client.emit(EVENTS_EMIT.LIVE_TRANSCRIPT, {
 						text: transcriptText.trim(),
@@ -291,9 +303,10 @@ Keep responses conversational and encouraging.`
 						timestamp: Date.now()
 					})
 
-					this.logger.log(`[${clientID}] Transcript emitted: "${transcriptText.substring(0, 50)}..."`)
+					this.logger.log(`[${clientID}] AI Transcript emitted: "${transcriptText.substring(0, 50)}..."`)
 				}
 
+				// Emit when turn is complete
 				if (message.serverContent.turnComplete) {
 					client.emit(EVENTS_EMIT.RESPONSE_COMPLETE, {
 						aiResponse: transcriptText.trim(),
@@ -303,16 +316,9 @@ Keep responses conversational and encouraging.`
 				}
 			}
 
-			if (message.serverContent?.userContent?.parts) {
-				const userParts = message.serverContent.userContent.parts
-
-				let userTranscript = ''
-
-				for (const part of userParts) {
-					if (part.text) {
-						userTranscript += part.text
-					}
-				}
+			// Handle user content with outputTranscription
+			if (message.serverContent?.inputTranscription?.text) {
+				const userTranscript = message.serverContent.inputTranscription.text
 
 				if (userTranscript.trim()) {
 					this.logger.log(`[${clientID}] User transcript: "${userTranscript.trim()}"`)
@@ -322,6 +328,18 @@ Keep responses conversational and encouraging.`
 						timestamp: Date.now()
 					})
 				}
+			}
+
+			// Handle outputTranscription (AI's transcribed response)
+			if (message.serverContent?.outputTranscription?.text) {
+				const outputTranscriptionText = message.serverContent.outputTranscription.text
+
+				this.logger.log(`[${clientID}] Output transcription: "${outputTranscriptionText}"`)
+
+				client.emit(EVENTS_EMIT.AI_RESPONSE, {
+					text: outputTranscriptionText,
+					timestamp: Date.now()
+				})
 			}
 		} catch (error) {
 			this.logger.error(`[${clientID}] Error handling Live API message: ${(error as Error).message}`)

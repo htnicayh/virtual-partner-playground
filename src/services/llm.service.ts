@@ -1,7 +1,7 @@
-import { GoogleGenAI } from '@google/genai'
+import { GoogleGenAI, LiveServerMessage } from '@google/genai'
 import { Injectable, Logger } from '@nestjs/common'
 import { ConfigService } from '@nestjs/config'
-import { LiveApiConfig, LiveApiMessage, LiveSession } from '../commons/interfaces/live-api.interface'
+import { LiveAPIConfig, LiveSession } from '../commons/interfaces/live-api.interface'
 
 @Injectable()
 export class LlmService {
@@ -22,10 +22,10 @@ export class LlmService {
 
 	async createLiveSession(
 		clientId: string,
-		config: LiveApiConfig,
-		onMessage: (message: LiveApiMessage) => void,
-		onError?: (error: Error) => void,
-		onClose?: (reason: string) => void
+		config: LiveAPIConfig,
+		handleMessage: (message: LiveServerMessage) => void,
+		handleError?: (error: Error) => void,
+		handleClose?: (reason: string) => void
 	): Promise<LiveSession> {
 		try {
 			this.logger.log(`[${clientId}] Creating Live API session...`)
@@ -34,22 +34,34 @@ export class LlmService {
 				model: config.model,
 				config: {
 					responseModalities: config.responseModalities as any,
-					systemInstruction: config.systemInstruction
+					systemInstruction: config.systemInstruction,
+					inputAudioTranscription: config.inputAudioTranscription,
+					outputAudioTranscription: config.outputAudioTranscription
 				},
 				callbacks: {
 					onopen: () => {
 						this.logger.log(`[${clientId}] Live API session connected`)
 					},
 					onmessage: (message: any) => {
-						onMessage(message as LiveApiMessage)
+						this.logger.log(`[${clientId}] Live API message received: ${JSON.stringify(message)}`)
+
+						if (handleMessage) {
+							handleMessage(message as LiveServerMessage)
+						}
 					},
 					onerror: (error: any) => {
 						this.logger.error(`[${clientId}] Live API error: ${error.message}`)
-						if (onError) onError(error)
+
+						if (handleError) {
+							handleError(error)
+						}
 					},
 					onclose: (event: any) => {
 						this.logger.log(`[${clientId}] Live API session closed: ${event.reason}`)
-						if (onClose) onClose(event.reason)
+
+						if (handleClose) {
+							handleClose(event.reason)
+						}
 					}
 				}
 			})
@@ -70,6 +82,7 @@ export class LlmService {
 			return liveSession
 		} catch (error) {
 			this.logger.error(`[${clientId}] Failed to create Live API session: ${(error as Error).message}`)
+
 			throw new Error(`Live API session creation failed: ${(error as Error).message}`)
 		}
 	}
@@ -84,8 +97,10 @@ export class LlmService {
 		try {
 			const base64Audio = audioChunk.toString('base64')
 
-			// Log first few chunks to verify
-			if (!liveSession.audioQueue) liveSession.audioQueue = []
+			if (!liveSession.audioQueue) {
+				liveSession.audioQueue = []
+			}
+
 			liveSession.audioQueue.push(audioChunk)
 
 			if (liveSession.audioQueue.length <= 3) {
@@ -100,6 +115,7 @@ export class LlmService {
 			})
 		} catch (error) {
 			this.logger.error(`[${clientId}] Failed to send audio: ${(error as Error).message}`)
+
 			throw error
 		}
 	}
@@ -109,11 +125,13 @@ export class LlmService {
 
 		if (!liveSession) {
 			this.logger.warn(`[${clientId}] No Live API session to close`)
+
 			return
 		}
 
 		try {
 			liveSession.isActive = false
+
 			this.liveSessions.delete(clientId)
 
 			this.logger.log(`[${clientId}] Live API session closed and cleaned up`)
