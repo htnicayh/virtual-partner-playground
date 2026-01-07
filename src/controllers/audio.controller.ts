@@ -1,36 +1,14 @@
-import {
-	Body,
-	Controller,
-	HttpException,
-	HttpStatus,
-	Logger,
-	Post,
-	Res,
-	UploadedFile,
-	UseInterceptors
-} from '@nestjs/common'
+import { HttpService } from '@nestjs/axios'
+import { Body, Controller, Logger, Post, Res, UploadedFile, UseInterceptors } from '@nestjs/common'
 import { FileInterceptor } from '@nestjs/platform-express'
 import { Response } from 'express'
-import { ConversationService } from '../services/conversation.service'
-import { LlmService } from '../services/llm.service'
-import { SessionService } from '../services/session.service'
-import { STTService } from '../services/speech-to-text.service'
-import { TTSService } from '../services/text-to-speech.service'
-import { HttpService } from '@nestjs/axios'
 import { firstValueFrom } from 'rxjs'
 
 @Controller()
 export class AudioController {
 	private readonly logger: Logger = new Logger(AudioController.name)
 
-	constructor(
-		private readonly sttService: STTService,
-		private readonly ttsService: TTSService,
-		private readonly llmService: LlmService,
-		private readonly conversationService: ConversationService,
-		private readonly sessionService: SessionService,
-		private readonly httpService: HttpService
-	) {}
+	constructor(private readonly httpService: HttpService) {}
 
 	@Post('/proxy-audio')
 	async proxyAudio(@Body() body: { url: string }, @Res() res: Response) {

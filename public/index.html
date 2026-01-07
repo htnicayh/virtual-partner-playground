@@ -249,6 +249,7 @@
 				0% {
 					transform: rotate(0deg);
 				}
+
 				100% {
 					transform: rotate(360deg);
 				}
@@ -276,6 +277,7 @@
 				0% {
 					background-position: 200% 0;
 				}
+
 				100% {
 					background-position: -200% 0;
 				}
@@ -399,11 +401,12 @@
 			}
 		</style>
 	</head>
+
 	<body>
 		<div class="main-content">
 			<div class="container">
 				<h1>Virtual Partner Playground</h1>
-				<p class="subtitle">Virtual Partner</p>
+				<p class="subtitle">Live API Duplex Streaming (PCM)</p>
 
 				<div class="status disconnected" id="status">
 					<span class="status-text" id="statusText">Disconnected</span>
@@ -475,30 +478,24 @@
 
 		<script>
 			let socket = null
+			let audioContext = null
+			let processor = null
+			let source = null
 			let mediaStream = null
-			let mediaRecorder = null
-			let audioChunks = []
 			let isRecording = false
 			let recordingStartTime = null
 			let recordingInterval = null
 			let totalBytesSent = 0
 			let chunksSent = 0
-			let analyser = null
-			let dataArray = null
-			let canvas = null
-			let canvasCtx = null
-			let animationId = null
-			let chatHistory = []
-			let conversationId = null
 			let displayedMessages = new Set()
-			let clientLogs = []
-			let hasStartedConversation = false
+			let conversationId = null
 
-			// const SERVER_URL = 'ws://localhost:3000'
-			// const HTTP_URL = 'http://localhost:3000'
-			const SERVER_URL = 'wss://virtual-partner-backend-production.up.railway.app'
-			const HTTP_URL = 'https://virtual-partner-backend-production.up.railway.app'
-			const CHUNK_SIZE = 8192
+			let audioOutputContext = null
+			let audioQueue = []
+			let isPlaying = false
+
+			const SERVER_URL = 'ws://localhost:3000'
+			// const SERVER_URL = 'wss://virtual-partner-backend-production.up.railway.app'
 
 			function log(message, type = 'message') {
 				const logsContainer = document.getElementById('logs')
@@ -527,46 +524,7 @@
 
 				logsContainer.appendChild(entry)
 				logsContainer.scrollTop = logsContainer.scrollHeight
-
-				clientLogs.push({
-					timestamp: time,
-					level: type.toUpperCase(),
-					message: message,
-					context: 'Client'
-				})
 			}
-
-			window.addEventListener('beforeunload', async (event) => {
-				log(`[BEFOREUNLOAD] Page about to unload/reload`, 'message')
-
-				if (clientLogs.length > 0) {
-					log(`[BEFOREUNLOAD] Uploading ${clientLogs.length} logs before exit...`, 'message')
-				}
-			})
-
-			window.addEventListener('unload', () => {
-				log(`[UNLOAD] Page unloading`, 'message')
-			})
-
-			window.addEventListener('popstate', () => {
-				log(`[POPSTATE] History back/forward`, 'message')
-			})
-
-			window.addEventListener('pagehide', () => {
-				log(`[PAGEHIDE] Page hidden/unload`, 'message')
-			})
-
-			document.addEventListener('visibilitychange', () => {
-				log(`[VISIBILITY] Visibility changed: ${document.hidden ? 'hidden' : 'visible'}`, 'message')
-			})
-
-			window.addEventListener('error', (event) => {
-				log(`[GLOBAL ERROR] ${event.message} at ${event.filename}:${event.lineno}`, 'error')
-			})
-
-			window.addEventListener('unhandledrejection', (event) => {
-				log(`[UNHANDLED REJECTION] ${event.reason}`, 'error')
-			})
 
 			function updateStatus(text, type) {
 				const statusEl = document.getElementById('status')
@@ -582,7 +540,6 @@
 
 				if (recordingStartTime) {
 					const elapsed = ((Date.now() - recordingStartTime) / 1000).toFixed(1)
-
 					document.getElementById('recordTimeMetric').textContent = elapsed + 's'
 				}
 			}
@@ -600,12 +557,10 @@
 
 				if (sidebarMessages.children[0]?.textContent.includes('Start recording')) {
 					sidebarMessages.innerHTML = ''
-
 					displayedMessages.clear()
 				}
 
 				const messageEl = document.createElement('div')
-
 				messageEl.className = `sidebar-message ${role}`
 				messageEl.textContent = text
 
@@ -615,9 +570,7 @@
 
 			function showProcessing(text) {
 				const processing = document.getElementById('processing')
-
 				document.getElementById('processingText').textContent = text
-
 				processing.classList.add('active')
 			}
 
@@ -625,25 +578,63 @@
 				document.getElementById('processing').classList.remove('active')
 			}
 
-			function showResponseLoading() {
-				const responseBox = document.getElementById('response')
-				const skeleton = document.createElement('div')
-				skeleton.className = 'loading-skeleton'
-				skeleton.id = 'responseSkeleton'
-				skeleton.innerHTML =
-					'<div class="skeleton-line"></div><div class="skeleton-line"></div><div class="skeleton-line"></div>'
+			async function playAudioQueue() {
+				while (true) {
+					if (audioQueue.length === 0) {
+						isPlaying = false
+						await new Promise((resolve) => setTimeout(resolve, 50))
+						continue
+					}
 
-				responseBox.innerHTML = ''
-				responseBox.appendChild(skeleton)
-			}
+					if (!audioOutputContext) {
+						audioOutputContext = new (window.AudioContext || window.webkitAudioContext)({
+							sampleRate: 24000
+						})
+					}
 
-			function hideResponseLoading() {
-				const skeleton = document.getElementById('responseSkeleton')
+					isPlaying = true
+					const base64Audio = audioQueue.shift()
 
-				if (skeleton) {
-					skeleton.remove()
+					try {
+						// Decode base64 to Int16 PCM
+						const binaryString = atob(base64Audio)
+						const bytes = new Uint8Array(binaryString.length)
+
+						for (let i = 0; i < binaryString.length; i++) {
+							bytes[i] = binaryString.charCodeAt(i)
+						}
+
+						// Convert Int16 to Float32 for AudioContext
+						const int16Array = new Int16Array(bytes.buffer)
+						const float32Array = new Float32Array(int16Array.length)
+
+						for (let i = 0; i < int16Array.length; i++) {
+							float32Array[i] = int16Array[i] / 32768.0
+						}
+
+						// Create and play audio buffer
+						const audioBuffer = audioOutputContext.createBuffer(1, float32Array.length, 24000)
+
+						audioBuffer.getChannelData(0).set(float32Array)
+
+						const source = audioOutputContext.createBufferSource()
+
+						source.buffer = audioBuffer
+						source.connect(audioOutputContext.destination)
+
+						// Wait for playback to complete
+						await new Promise((resolve) => {
+							source.onended = resolve
+							source.start()
+						})
+					} catch (e) {
+						log(`Audio playback error: ${e.message}`, 'error')
+					}
 				}
 			}
+
+			// Start playback loop
+			playAudioQueue()
 
 			async function connect() {
 				try {
@@ -675,461 +666,283 @@
 						isRecording = false
 					})
 
-					socket.on('disconnect', (reason) => {
-						log(`[DEBUG DISCONNECT] Reason: ${reason}`, 'error')
-						updateStatus('Disconnected', 'disconnected')
+					socket.on('live-session-ready', (data) => {
+						log('Live API session ready', 'success')
+					})
 
-						document.getElementById('recordBtn').disabled = true
-						document.getElementById('finishBtn').disabled = true
-						document.getElementById('stopBtn').disabled = true
+					socket.on('live-audio-chunk', async (data) => {
+						log('Received audio chunk from AI')
+						audioQueue.push(data.audio)
+					})
 
-						isRecording = false
+					socket.on('live-transcript', (data) => {
+						document.getElementById('response').textContent = data.text
+						log(`AI transcript: "${data.text.substring(0, 50)}..."`, 'success')
+						addChatMessage(data.text, 'assistant')
+					})
+
+					socket.on('live-interrupted', () => {
+						log('AI response interrupted', 'message')
+						audioQueue = []
 					})
 
 					socket.on('stream-started', (data) => {
 						log('Stream started', 'success')
-
 						showProcessing('Recording audio...')
 					})
 
 					socket.on('chunk-received', (data) => {
-						log(`Chunk ${data.chunkIndex} acknowledged`)
+						// Silent
 					})
 
 					socket.on('user-transcript', (data) => {
 						document.getElementById('transcript').textContent = data.text
-
 						log('Transcription received', 'success')
-
-						chatHistory.push({ role: 'user', content: data.text })
-
 						addChatMessage(data.text, 'user')
 					})
 
 					socket.on('processing', (data) => {
 						showProcessing(`Processing: ${data.status}`)
-
 						log(`Status: ${data.status}`)
 					})
 
-					let pendingAITranscript = null
-
-					socket.on('ai-response', (data) => {
-						if (!hasStartedConversation) {
-							hasStartedConversation = true
+					socket.onAny((eventName, ...args) => {
+						if (eventName !== 'chunk-received') {
+							log(`Event received: ${eventName}`, 'message')
 						}
-
-						showResponseLoading()
-
-						pendingAITranscript = data.text
-
-						log('AI response received, transcript pending audio playback', 'success')
-
-						chatHistory.push({ role: 'assistant', content: data.text })
 					})
 
-					socket.on('response-complete', (data) => {
-						log(`[STEP 1] response-complete event received`, 'message')
-
-						try {
-							log(`[STEP 2] Hiding processing indicator...`, 'message')
-							hideProcessing()
-							log(`[STEP 3] Processing hidden`, 'message')
-
-							log(`[STEP 4] Updating time metric...`, 'message')
-							document.getElementById('timeMetric').textContent = data.processingTime + 'ms'
-							log(`[STEP 5] Time metric updated: ${data.processingTime}ms`, 'message')
-
-							log(`[STEP 6] Updating metrics...`, 'message')
-							updateMetrics()
-							log(`[STEP 7] Metrics updated`, 'message')
-
-							log(`[STEP 8] Stopping visualization...`, 'message')
-							stopVisualization()
-							log(`[STEP 9] Visualization stopped`, 'message')
-
-							log(`[STEP 10] Enabling buttons...`, 'message')
-							document.getElementById('recordBtn').disabled = false
-							document.getElementById('stopBtn').disabled = false
-							log(`[STEP 11] Buttons updated`, 'message')
-
-							log(`[STEP 12] Checking if audioUrl exists...`, 'message')
-							if (!data.audioUrl) {
-								log(`[STEP 12a] No audio URL in response!`, 'error')
-								return
-							}
-							log(`[STEP 12b] audioUrl exists: ${data.audioUrl}`, 'message')
-
-							log(`[STEP 13] Constructing audio URL...`, 'message')
-							let audioUrl =
-								data.audioUrl.startsWith('http') || data.audioUrl.startsWith('data:')
-									? data.audioUrl
-									: `http://localhost:3000${data.audioUrl}`
-							log(`[STEP 14] Audio URL constructed: ${audioUrl.substring(0, 60)}...`, 'message')
-
-							log(`Audio URL: ${audioUrl.substring(0, 60)}...`, 'success')
-							log(`[STEP 15] Logged audio URL`, 'message')
-
-							log(`[STEP 16] Setting up setTimeout for audio playback...`, 'message')
-
-							setTimeout(() => {
-								log(`[STEP 17] setTimeout callback EXECUTED`, 'message')
-								log(`[STEP 18] Creating Audio element...`, 'message')
-
-								try {
-									const audio = new Audio()
-									log(`[STEP 19] Audio element created`, 'message')
-
-									audio.crossOrigin = 'anonymous'
-									audio.volume = 1.0
-									log(`[STEP 20] Audio properties set`, 'message')
-
-									log(`[STEP 21] Setting up event listeners...`, 'message')
-
-									audio.onplay = () => {
-										log('Audio playback started', 'success')
-
-										if (pendingAITranscript) {
-											const responseBox = document.getElementById('response')
-											hideResponseLoading()
-
-											responseBox.textContent = ''
-											responseBox.textContent = pendingAITranscript
-
-											addChatMessage(pendingAITranscript, 'assistant')
-										}
-									}
-
-									audio.onended = () => {
-										log('Audio playback completed', 'success')
-
-										pendingAITranscript = null
-									}
-
-									audio.onerror = (err) => {
-										log(`Audio error: ${audio.error?.message || 'Unknown error'}`, 'error')
-										log(`Audio error code: ${audio.error?.code}`, 'error')
-
-										if (audioUrl.includes('https')) {
-											log('Attempting to proxy audio through server...', 'message')
-
-											proxyAudio(data.audioUrl, audio)
-										}
-									}
-
-									audio.onloadstart = () => {
-										log('Audio loading...', 'message')
-									}
-
-									audio.oncanplay = () => {
-										log('Audio ready to play', 'success')
-									}
-
-									audio.onloadedmetadata = () => {
-										log(`Audio metadata loaded: ${audio.duration.toFixed(2)}s`, 'success')
-									}
-
-									log(`[STEP 22] Event listeners attached`, 'message')
-
-									log(`[STEP 23] Setting audio src to: ${audioUrl.substring(0, 80)}...`, 'message')
-									audio.src = audioUrl
-									log(`[STEP 24] Audio src set`, 'message')
-
-									log(`[STEP 25] Calling audio.play()...`, 'message')
-									audio
-										.play()
-										.then(() => {
-											log('Playing AI response audio...', 'success')
-										})
-										.catch((err) => {
-											log(`Audio playback failed: ${err.message}`, 'error')
-										})
-									log(`[STEP 26] audio.play() called`, 'message')
-								} catch (err) {
-									log(`[ERROR in setTimeout] ${err.message}`, 'error')
-									log(`[ERROR Stack] ${err.stack}`, 'error')
-								}
-
-								log(`[STEP 27] setTimeout callback FINISHED`, 'message')
-							}, 300)
-
-							log(`[STEP 28] setTimeout scheduled (will run after 300ms)`, 'message')
-						} catch (error) {
-							log(`[GLOBAL ERROR in response-complete] ${error.message}`, 'error')
-							log(`[ERROR Stack] ${error.stack}`, 'error')
-						}
-
-						log(`[STEP 29] response-complete handler FINISHED`, 'message')
-					})
-
-					function proxyAudio(audioUrl, audioElement) {
-						log('Sending proxy request to server...', 'message')
-
-						fetch(`${HTTP_URL}/api/audio/proxy-audio`, {
-							method: 'POST',
-							headers: { 'Content-Type': 'application/json' },
-							body: JSON.stringify({ url: audioUrl })
-						})
-							.then((res) => {
-								log(`Proxy response status: ${res.status}`, 'message')
-
-								return res.blob()
-							})
-							.then((blob) => {
-								log(`Audio blob received, size: ${blob.size} bytes`, 'success')
-
-								const blobUrl = URL.createObjectURL(blob)
-
-								audioElement.src = blobUrl
-
-								log('Playing proxied audio...', 'message')
-
-								audioElement
-									.play()
-									.then(() => {
-										log('Proxied audio playback started', 'success')
-									})
-									.catch((err) => {
-										log(`Proxied audio playback failed: ${err.message}`, 'error')
-									})
-							})
-							.catch((err) => {
-								log(`Proxy request failed: ${err.message}`, 'error')
-							})
-					}
-
-					socket.on('stream-cancelled', () => {
-						log('Stream cancelled', 'error')
-						hideProcessing()
-						hideResponseLoading()
-						updateStatus('Connected', 'connected')
-
-						isRecording = false
-
-						document.getElementById('recordBtn').disabled = false
-						document.getElementById('finishBtn').disabled = true
-						document.getElementById('stopBtn').disabled = true
-						document.getElementById('cancelBtn').disabled = true
-
-						stopVisualization()
+					socket.on('error', (data) => {
+						log(`Error: ${data.message}`, 'error')
+						updateStatus(`Error: ${data.code}`, 'disconnected')
 					})
 				} catch (error) {
 					log(`Connection error: ${error.message}`, 'error')
-					updateStatus('Connection Failed', 'disconnected')
 				}
 			}
 
 			async function startRecording() {
 				try {
-					log('Requesting microphone access...')
+					log('Starting recording...')
 
+					// Get mic with PCM settings (like verify-liveapi.js)
 					mediaStream = await navigator.mediaDevices.getUserMedia({
 						audio: {
+							channelCount: 1,
 							sampleRate: 16000,
 							echoCancellation: true,
 							noiseSuppression: true
 						}
 					})
 
-					log('Microphone access granted', 'success')
+					// Create AudioContext at 16kHz
+					audioContext = new (window.AudioContext || window.webkitAudioContext)({
+						sampleRate: 16000
+					})
 
-					const audioContext = new (window.AudioContext || window.webkitAudioContext)()
-					const source = audioContext.createMediaStreamSource(mediaStream)
+					source = audioContext.createMediaStreamSource(mediaStream)
+					processor = audioContext.createScriptProcessor(4096, 1, 1)
 
-					analyser = audioContext.createAnalyser()
-					analyser.fftSize = 256
+					let chunkIndex = 0
 
-					source.connect(analyser)
+					processor.onaudioprocess = (e) => {
+						if (!isRecording) return
 
-					const bufferLength = analyser.frequencyBinCount
+						const inputData = e.inputBuffer.getChannelData(0)
 
-					dataArray = new Uint8Array(bufferLength)
+						// Convert Float32 to Int16 PCM
+						const pcmData = new Int16Array(inputData.length)
+						for (let i = 0; i < inputData.length; i++) {
+							const s = Math.max(-1, Math.min(1, inputData[i]))
+							pcmData[i] = s < 0 ? s * 0x8000 : s * 0x7fff
+						}
 
-					startVisualization()
+						// Convert to base64 (like verify-liveapi.js)
+						const buffer = new Uint8Array(pcmData.buffer)
+						const base64 = btoa(String.fromCharCode.apply(null, buffer))
 
-					mediaRecorder = new MediaRecorder(mediaStream)
-					audioChunks = []
+						socket.emit('audio-chunk', {
+							chunk: base64,
+							chunkIndex: chunkIndex++
+						})
+
+						totalBytesSent += buffer.length
+						chunksSent++
+					}
+
+					source.connect(processor)
+					processor.connect(audioContext.destination)
+
+					conversationId = 'conv-' + Date.now()
+
+					socket.emit('start-stream', {
+						userId: 'user-' + Date.now(),
+						sessionId: 'session-' + Date.now(),
+						conversationId: conversationId
+					})
+
+					recordingStartTime = Date.now()
 					totalBytesSent = 0
 					chunksSent = 0
 
-					mediaRecorder.ondataavailable = async (event) => {
-						if (event.data.size > 0) {
-							const buffer = await event.data.arrayBuffer()
-							const uint8Array = new Uint8Array(buffer)
-
-							const base64 = btoa(String.fromCharCode.apply(null, uint8Array))
-
-							socket.emit('audio-chunk', {
-								chunk: base64,
-								chunkIndex: chunksSent,
-								isFinal: false
-							})
-
-							totalBytesSent += uint8Array.length
-							chunksSent++
-
-							updateMetrics()
-						}
-					}
-
-					mediaRecorder.start(100)
-
-					recordingStartTime = Date.now()
-					recordingInterval = setInterval(updateMetrics, 100)
-
 					isRecording = true
 
-					updateStatus('Recording', 'recording')
-					log('Recording started', 'success')
+					updateStatus('Recording...', 'recording')
+					log('Recording started (PCM 16kHz mode)', 'success')
 
 					document.getElementById('recordBtn').disabled = true
 					document.getElementById('finishBtn').disabled = false
+					document.getElementById('stopBtn').disabled = false
 					document.getElementById('cancelBtn').disabled = false
 
-					socket.emit('start-stream', {
-						userId: 'test-user-' + Math.random().toString(36).substr(2, 9),
-						conversationId: 'conv-' + Date.now(),
-						sessionId: 'session-' + Date.now(),
-						provider: 'gemini'
-					})
-
-					conversationId = 'conv-' + Date.now()
-					chatHistory = []
-					displayedMessages.clear()
-
-					document.getElementById('stopBtn').disabled = true
+					recordingInterval = setInterval(updateMetrics, 1000)
 				} catch (error) {
-					log(`Microphone error: ${error.message}`, 'error')
-
-					updateStatus('Microphone Error', 'disconnected')
+					log(`Recording error: ${error.message}`, 'error')
+					updateStatus('Recording failed', 'disconnected')
 				}
 			}
 
 			async function finishRecording() {
-				if (!mediaRecorder || !isRecording) {
-					return
-				}
-
 				try {
+					log('Finishing recording...')
+
 					isRecording = false
 
-					clearInterval(recordingInterval)
+					if (processor) {
+						processor.disconnect()
+						source.disconnect()
+					}
 
-					mediaStream.getTracks().forEach((track) => track.stop())
+					if (mediaStream) {
+						mediaStream.getTracks().forEach((track) => track.stop())
+					}
 
-					updateStatus('Processing', 'processing')
-					log('Recording stopped', 'success')
+					if (audioContext && audioContext.state !== 'closed') {
+						await audioContext.close()
+						audioContext = null
+					}
+
+					if (recordingInterval) {
+						clearInterval(recordingInterval)
+					}
+
+					socket.emit('end-stream', {})
+
+					updateStatus('Connected', 'connected')
+					log('Recording finished', 'success')
 
 					document.getElementById('recordBtn').disabled = false
 					document.getElementById('finishBtn').disabled = true
 					document.getElementById('stopBtn').disabled = false
 					document.getElementById('cancelBtn').disabled = true
 
-					mediaRecorder.ondataavailable = async (event) => {
-						if (event.data.size > 0) {
-							const buffer = await event.data.arrayBuffer()
-							const uint8Array = new Uint8Array(buffer)
-							const base64 = btoa(String.fromCharCode.apply(null, uint8Array))
-
-							socket.emit('audio-chunk', {
-								chunk: base64,
-								chunkIndex: chunksSent,
-								isFinal: true
-							})
-
-							chunksSent++
-
-							updateMetrics()
-							log('Final chunk sent', 'success')
-						}
-					}
-
-					mediaRecorder.onstop = () => {
-						log('MediaRecorder stopped', 'success')
-
-						socket.emit('end-stream', { sessionId: 'test' })
-
-						log('End stream signal sent', 'success')
-					}
-
-					mediaRecorder.stop()
+					recordingStartTime = null
 				} catch (error) {
-					log(`Stop recording error: ${error.message}`, 'error')
+					log(`Finish error: ${error.message}`, 'error')
 				}
 			}
 
-			function cancelStream() {
-				if (socket && isRecording) {
-					socket.emit('cancel-stream', { sessionId: 'test' })
+			async function stopSession() {
+				try {
+					log('Stopping session...')
 
-					log('Cancel request sent', 'message')
-				}
-			}
+					isRecording = false
 
-			function stopSession() {
-				log('[DEBUG] stopSession() called - manually by user', 'message')
-
-				if (socket) {
-					socket.emit('end-conversation', { conversationId })
-
-					log('End conversation signal sent', 'success')
-
-					setTimeout(() => {
-						socket.disconnect()
-
-						updateStatus('Disconnected', 'disconnected')
-						log('Conversation session closed', 'success')
-
-						document.getElementById('recordBtn').disabled = true
-						document.getElementById('finishBtn').disabled = true
-						document.getElementById('stopBtn').disabled = true
-						document.getElementById('cancelBtn').disabled = true
-					}, 500)
-				}
-			}
-
-			function startVisualization() {
-				canvas = document.getElementById('audioCanvas')
-				canvasCtx = canvas.getContext('2d')
-				document.getElementById('visualization').classList.add('active')
-
-				canvas.width = canvas.offsetWidth
-				canvas.height = canvas.offsetHeight
-
-				function draw() {
-					animationId = requestAnimationFrame(draw)
-
-					analyser.getByteFrequencyData(dataArray)
-
-					canvasCtx.fillStyle = '#f9f9f9'
-					canvasCtx.fillRect(0, 0, canvas.width, canvas.height)
-
-					const barWidth = (canvas.width / dataArray.length) * 2.5
-					let x = 0
-
-					canvasCtx.fillStyle = '#667eea'
-
-					for (let i = 0; i < dataArray.length; i++) {
-						const barHeight = (dataArray[i] / 255) * canvas.height
-
-						canvasCtx.fillRect(x, canvas.height - barHeight, barWidth - 1, barHeight)
-						x += barWidth + 1
+					if (processor) {
+						processor.disconnect()
+						source.disconnect()
 					}
-				}
 
-				draw()
+					if (mediaStream) {
+						mediaStream.getTracks().forEach((track) => track.stop())
+					}
+
+					if (audioContext && audioContext.state !== 'closed') {
+						await audioContext.close()
+						audioContext = null
+					}
+
+					if (recordingInterval) {
+						clearInterval(recordingInterval)
+					}
+
+					await new Promise((resolve) => setTimeout(resolve, 100))
+
+					socket.emit('end-conversation', {
+						conversationId: conversationId
+					})
+
+					updateStatus('Connected', 'connected')
+					log('Session stopped', 'success')
+
+					document.getElementById('recordBtn').disabled = false
+					document.getElementById('finishBtn').disabled = true
+					document.getElementById('stopBtn').disabled = true
+					document.getElementById('cancelBtn').disabled = true
+
+					recordingStartTime = null
+					totalBytesSent = 0
+					chunksSent = 0
+					updateMetrics()
+				} catch (error) {
+					log(`Stop error: ${error.message}`, 'error')
+				}
 			}
 
-			function stopVisualization() {
-				if (animationId) {
-					cancelAnimationFrame(animationId)
-				}
+			async function cancelStream() {
+				try {
+					log('Cancelling stream...')
 
-				document.getElementById('visualization').classList.remove('active')
+					isRecording = false
+
+					if (processor) {
+						processor.disconnect()
+						source.disconnect()
+					}
+
+					if (mediaStream) {
+						mediaStream.getTracks().forEach((track) => track.stop())
+					}
+
+					if (audioContext && audioContext.state !== 'closed') {
+						await audioContext.close()
+						audioContext = null
+					}
+
+					if (recordingInterval) {
+						clearInterval(recordingInterval)
+					}
+
+					await new Promise((resolve) => setTimeout(resolve, 100))
+
+					socket.emit('cancel-stream', {
+						sessionId: 'session-' + Date.now()
+					})
+
+					updateStatus('Connected', 'connected')
+					log('Stream cancelled', 'success')
+
+					document.getElementById('recordBtn').disabled = false
+					document.getElementById('finishBtn').disabled = true
+					document.getElementById('stopBtn').disabled = false
+					document.getElementById('cancelBtn').disabled = true
+
+					recordingStartTime = null
+				} catch (error) {
+					log(`Cancel error: ${error.message}`, 'error')
+				}
 			}
 
-			window.addEventListener('DOMContentLoaded', () => {
+			window.addEventListener('load', () => {
+				log('Page loaded')
 				connect()
+				setInterval(updateMetrics, 1000)
+			})
+
+			window.addEventListener('beforeunload', () => {
+				if (socket) {
+					socket.disconnect()
+				}
 			})
 		</script>
 	</body>
