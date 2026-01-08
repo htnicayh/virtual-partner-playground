@@ -17,7 +17,12 @@ export const getDatabaseConfig = (): TypeOrmModuleOptions => ({
 	entities: [User, Conversation, Message, Session, AudioChunk],
 	synchronize: process.env.DATABASE_SYNCHRONIZE === 'false',
 	logging: process.env.DATABASE_LOGGING === 'true',
-	ssl: process.env.NODE_ENV === 'production'
+	ssl: false,
+	extra: {
+		ssl: {
+			rejectUnauthorized: false
+		}
+	}
 })
 
 export const getDatabaseModels = () => [User, Conversation, Message, Session, AudioChunk]
