@@ -304,47 +304,28 @@
 				display: block;
 			}
 
-			.log-entry {
-				padding: 3px 0;
-				border-bottom: 1px solid #333;
-			}
-
-			.log-entry:last-child {
-				border-bottom: none;
-			}
-
-			.log-time {
-				color: #858585;
-			}
-			.log-message {
-				color: #d4d4d4;
-			}
-			.log-error {
-				color: #f48771;
-			}
-			.log-success {
-				color: #89d185;
-			}
-
 			.chat-input-container {
 				border-top: 2px solid #e0e0e0;
 				padding-top: 12px;
+				position: relative;
 			}
 
 			.chat-input-wrapper {
+				position: relative;
 				display: flex;
-				gap: 8px;
+				align-items: center;
 			}
 
 			.chat-input {
 				flex: 1;
-				padding: 8px 12px;
+				padding: 10px 52px 10px 12px;
 				border: 1px solid #e0e0e0;
 				border-radius: 6px;
 				font-size: 12px;
 				font-family: inherit;
 				outline: none;
 				transition: border-color 0.2s;
+				width: 100%;
 			}
 
 			.chat-input:focus {
@@ -355,29 +336,30 @@
 				color: #999;
 			}
 
-			.chat-send-btn {
-				padding: 8px 16px;
-				background: #667eea;
-				color: white;
+			.chat-send-icon {
+				position: absolute;
+				right: 2px;
+				background: none;
 				border: none;
-				border-radius: 6px;
-				font-size: 12px;
-				font-weight: 600;
+				width: 30px;
+				height: 40px;
+				display: flex;
+				align-items: center;
+				justify-content: center;
 				cursor: pointer;
-				transition: all 0.2s;
-				flex-shrink: 0;
-				min-width: auto;
+				border-radius: 50%;
+				transition: opacity 0.2s ease;
 			}
 
-			.chat-send-btn:hover:not(:disabled) {
-				background: #5568d3;
-				transform: translateY(-1px);
+			.chat-send-icon svg {
+				width: 22px;
+				height: 22px;
+				fill: #667eea;
 			}
 
-			.chat-send-btn:disabled {
-				opacity: 0.5;
+			.chat-send-icon:disabled {
+				opacity: 0.3;
 				cursor: not-allowed;
-				transform: none;
 			}
 		</style>
 	</head>
@@ -449,7 +431,11 @@
 				<div class="chat-input-container">
 					<div class="chat-input-wrapper">
 						<input type="text" class="chat-input" id="chatInput" placeholder="Type a message..." disabled />
-						<button class="chat-send-btn" id="sendBtn" onclick="sendTextMessage()" disabled>Send</button>
+						<button class="chat-send-icon" id="sendIcon" disabled aria-label="Send message">
+							<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+								<path d="M2 21l21-9L2 3v7l15 2-15 2v7z" />
+							</svg>
+						</button>
 					</div>
 				</div>
 			</div>
@@ -474,7 +460,6 @@
 			let audioOutputContext = null
 			let currentSource = null
 
-			// Transcript tracking variables
 			let lastUserTranscriptTime = null
 			let currentUserTranscript = ''
 			let transcriptTimeout = null
@@ -528,7 +513,6 @@
 				el.textContent = text
 				container.appendChild(el)
 
-				// Auto scroll to bottom with smooth behavior
 				requestAnimationFrame(() => {
 					container.scrollTop = container.scrollHeight
 				})
@@ -544,7 +528,6 @@
 					addChatMessage(text, 'user')
 				}
 
-				// Auto scroll to bottom with smooth behavior
 				requestAnimationFrame(() => {
 					container.scrollTop = container.scrollHeight
 				})
@@ -583,7 +566,7 @@
 				document.getElementById('recordBtn').disabled = recording
 				document.getElementById('endBtn').disabled = !recording
 				document.getElementById('chatInput').disabled = !recording
-				document.getElementById('sendBtn').disabled = !recording
+				updateSendIconState()
 			}
 
 			function initAudioContext() {
@@ -697,25 +680,20 @@
 
 					const now = Date.now()
 
-					// Clear any existing timeout
 					if (transcriptTimeout) {
 						clearTimeout(transcriptTimeout)
 					}
 
-					// If this is a new transcript or after 1 second of silence
 					if (!lastUserTranscriptTime || now - lastUserTranscriptTime > 1000) {
-						// Create new message
 						currentUserTranscript = text
 						addChatMessage(text, 'user')
 					} else {
-						// Update existing message
 						currentUserTranscript = text
 						updateCurrentUserMessage(text)
 					}
 
 					lastUserTranscriptTime = now
 
-					// Set timeout to finalize the message after 1 second of silence
 					transcriptTimeout = setTimeout(() => {
 						lastUserTranscriptTime = null
 						currentUserTranscript = ''
@@ -740,30 +718,43 @@
 
 				if (IS_DEV) log(`Sending text message: ${message}`)
 
-				// Add user message to chat
 				addChatMessage(message, 'user')
 
-				// Emit text message to server
 				socket.emit('text-message', {
 					text: message,
 					conversationId,
 					timestamp: Date.now()
 				})
 
-				// Clear input
 				input.value = ''
+				updateSendIconState()
 			}
 
-			// Handle Enter key in chat input
+			function updateSendIconState() {
+				const input = document.getElementById('chatInput')
+				const icon = document.getElementById('sendIcon')
+				const hasText = input.value.trim().length > 0
+				const isEnabled = !input.disabled
+
+				icon.disabled = !(hasText && isEnabled)
+			}
+
 			document.addEventListener('DOMContentLoaded', () => {
 				const chatInput = document.getElementById('chatInput')
+				const sendIcon = document.getElementById('sendIcon')
+
 				if (chatInput) {
+					chatInput.addEventListener('input', updateSendIconState)
 					chatInput.addEventListener('keypress', (e) => {
 						if (e.key === 'Enter' && !e.shiftKey) {
 							e.preventDefault()
 							sendTextMessage()
 						}
 					})
+				}
+
+				if (sendIcon) {
+					sendIcon.addEventListener('click', sendTextMessage)
 				}
 			})
 
@@ -817,6 +808,7 @@
 					isRecording = true
 					updateStatus('Recording...', 'recording')
 					updateButtonStates(true)
+					updateSendIconState()
 					recordingInterval = setInterval(updateMetrics, 1000)
 				} catch (err) {
 					if (IS_DEV) log(`Recording error: ${err.message}`, 'error')
@@ -830,10 +822,10 @@
 				socket.emit('end-conversation', { conversationId })
 				updateStatus('Connected', 'connected')
 				updateButtonStates(false)
+				updateSendIconState()
 				resetRecordingState()
 				hideProcessing()
 
-				// Clear transcript state
 				if (transcriptTimeout) {
 					clearTimeout(transcriptTimeout)
 					transcriptTimeout = null
