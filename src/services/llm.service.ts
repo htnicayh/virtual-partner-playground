@@ -43,8 +43,6 @@ export class LlmService {
 						this.logger.log(`[${clientId}] Live API session connected`)
 					},
 					onmessage: (message: any) => {
-						this.logger.log(`[${clientId}] Live API message received: ${JSON.stringify(message)}`)
-
 						if (handleMessage) {
 							handleMessage(message as LiveServerMessage)
 						}

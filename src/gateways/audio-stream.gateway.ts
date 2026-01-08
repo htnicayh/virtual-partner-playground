@@ -14,9 +14,11 @@ import { Server, Socket } from 'socket.io'
 import { EVENTS, EVENTS_EMIT } from '../commons/constants'
 import { LiveAPIConfig } from '../commons/interfaces/live-api.interface'
 import { AudioChunk, StartStream } from '../commons/interfaces/message-body.interface'
+import { TranscriptState } from '../commons/interfaces/transcript-state.interface'
 import { AudioService } from '../services/audio.service'
 import { CacheService } from '../services/cache.service'
 import { LlmService } from '../services/llm.service'
+import { cleanTranscript } from '../utils'
 
 @WebSocketGateway({
 	cors: {
@@ -30,6 +32,8 @@ export class AudioStreamGateway implements OnGatewayConnection, OnGatewayDisconn
 	private readonly logger = new Logger(AudioStreamGateway.name)
 	private readonly systemInstruction: string
 	private readonly geminiModel: string
+	private readonly SILENCE_TIMEOUT = 1000 // 1 second
+	private transcriptStates: Map<string, TranscriptState> = new Map()
 
 	@WebSocketServer()
 	server: Server
@@ -65,6 +69,15 @@ Keep responses conversational and encouraging.`
 	async handleDisconnect(client: Socket) {
 		const clientID = client.id
 		this.logger.log(`[${clientID}] Client disconnected`)
+
+		// Clear transcript timeout
+		const transcriptState = this.transcriptStates.get(clientID)
+
+		if (transcriptState?.timeout) {
+			clearTimeout(transcriptState.timeout)
+		}
+
+		this.transcriptStates.delete(clientID)
 
 		const session = await this.cacheService.getSessionState(clientID)
 
@@ -164,6 +177,15 @@ Keep responses conversational and encouraging.`
 	async handleEndConversation(@ConnectedSocket() client: Socket) {
 		const clientID = client.id
 
+		// Clear transcript timeout
+		const transcriptState = this.transcriptStates.get(clientID)
+
+		if (transcriptState?.timeout) {
+			clearTimeout(transcriptState.timeout)
+		}
+
+		this.transcriptStates.delete(clientID)
+
 		await this.cacheService.setSessionState(clientID, { isClosed: true, closedAt: Date.now() })
 		await Promise.allSettled([
 			this.cacheService.clearClientCaches(clientID),
@@ -178,6 +200,104 @@ Keep responses conversational and encouraging.`
 		})
 	}
 
+	private cleanFinalTranscript(text: string): string {
+		let cleaned = text
+			.trim()
+			.replace(/\s+/g, ' ') // Remove multiple spaces
+			.replace(/\s+([.,!?;:])/g, '$1') // Remove space before punctuation
+			.replace(/([.,!?;:])\s*([.,!?;:])/g, '$1$2') // Remove space between punctuation
+
+		return cleaned
+	}
+
+	private handleUserTranscript(client: Socket, text: string) {
+		const clientID = client.id
+		const now = Date.now()
+
+		// Clean the transcript first
+		const cleanedText = cleanTranscript(text)
+
+		// Skip if cleaned text is empty
+		if (!cleanedText) {
+			return
+		}
+
+		// Get or create transcript state
+		let state = this.transcriptStates.get(clientID)
+
+		if (!state) {
+			// First transcript - create new state
+			state = {
+				accumulatedText: cleanedText,
+				lastUpdateTime: now,
+				timeout: null,
+				lastEmittedText: ''
+			}
+			this.transcriptStates.set(clientID, state)
+		} else {
+			// Clear existing timeout
+			if (state.timeout) {
+				clearTimeout(state.timeout)
+			}
+
+			// Smart text concatenation logic
+			const lastChar = state.accumulatedText.slice(-1)
+			const firstChar = cleanedText.charAt(0)
+
+			// Check if we need to add space
+			let needSpace = false
+
+			if (state.accumulatedText) {
+				// Don't add space if:
+				// 1. Last text ends with space
+				// 2. New text starts with punctuation or space
+				// 3. Last text ends with apostrophe (for contractions like "let's")
+				// 4. New text starts with apostrophe or lowercase letter (continuation of word)
+				if (
+					lastChar === ' ' ||
+					/^[\s.,!?;:'"-]/.test(firstChar) ||
+					lastChar === "'" ||
+					firstChar === "'" ||
+					/^[a-z]/.test(firstChar)
+				) {
+					// If starts with lowercase, likely word continuation
+					needSpace = false
+				} else {
+					needSpace = true
+				}
+			}
+
+			state.accumulatedText += (needSpace ? ' ' : '') + cleanedText
+			state.lastUpdateTime = now
+		}
+
+		// Set new timeout to emit after 1 second of silence
+		state.timeout = setTimeout(() => {
+			const currentState = this.transcriptStates.get(clientID)
+
+			if (currentState && currentState.accumulatedText) {
+				// Clean up the accumulated text
+				const finalText = this.cleanFinalTranscript(currentState.accumulatedText)
+
+				this.logger.debug(`[${clientID}] Final transcript: "${finalText}"`)
+
+				// Only emit if text is different from last emitted text
+				if (finalText && finalText !== currentState.lastEmittedText) {
+					client.emit(EVENTS_EMIT.USER_TRANSCRIPT, {
+						text: finalText,
+						timestamp: Date.now()
+					})
+
+					// Update last emitted text
+					currentState.lastEmittedText = finalText
+				}
+
+				// Reset accumulated text
+				currentState.accumulatedText = ''
+				currentState.timeout = null
+			}
+		}, this.SILENCE_TIMEOUT)
+	}
 	private async handleLiveAPIMessage(client: Socket, message: LiveServerMessage) {
 		const clientID = client.id
 
@@ -206,10 +326,14 @@ Keep responses conversational and encouraging.`
 			}
 
 			if (message.serverContent?.inputTranscription?.text) {
-				const text = message.serverContent.inputTranscription.text.trim()
+				const text = message.serverContent.inputTranscription.text
 
 				if (text) {
-					client.emit(EVENTS_EMIT.USER_TRANSCRIPT, { text, timestamp: Date.now() })
+					// Debug log to see what Gemini is sending
+					this.logger.debug(`[${clientID}] Raw transcript: "${text}"`)
+
+					// Handle transcript with silence detection
+					this.handleUserTranscript(client, text)
 				}
 			}
 
@@ -226,7 +350,7 @@ Keep responses conversational and encouraging.`
 				const finalText = (await this.cacheService.getAIResponse(clientID)) || ''
 				const audioChunks = await this.cacheService.getAIAudioChunks(clientID)
 
-				client.emit(EVENTS_EMIT.AI_RESPONSE, { text: finalText, isFinal: true, timestamp: Date.now() })
+				client.emit(EVENTS_EMIT.AI_RESPONSE, { text: cleanTranscript(finalText), isFinal: true, timestamp: Date.now() })
 				client.emit(EVENTS_EMIT.AI_AUDIO_COMPLETE, { audioChunks, text: finalText, timestamp: Date.now() })
 				client.emit(EVENTS_EMIT.RESPONSE_COMPLETE, { aiResponse: finalText, timestamp: Date.now() })
 

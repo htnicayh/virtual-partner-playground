@@ -51,3 +51,23 @@ export const saveAudioBufferAsWav = (
 		}
 	})
 }
+
+export const cleanTranscript = (text: string): string => {
+	// Remove all HTML-like tags (anything between < and >)
+	let cleaned = text.replace(/<[^>]*>/g, '')
+
+	// Trim whitespace
+	cleaned = cleaned.trim()
+
+	// Remove special characters at the beginning of the sentence
+	// Keep only letters, numbers, and common punctuation at the start
+	cleaned = cleaned.replace(/^[^\w\s¿¡]+/u, '')
+
+	// Trim again after removing special chars
+	cleaned = cleaned.trim()
+
+	// Remove multiple spaces
+	cleaned = cleaned.replace(/\s+/g, ' ')
+
+	return cleaned
+}

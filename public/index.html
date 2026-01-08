@@ -50,13 +50,14 @@
 				padding: 20px;
 				display: flex;
 				flex-direction: column;
+				gap: 15px;
 			}
 
 			.sidebar-title {
 				font-size: 16px;
 				font-weight: 700;
 				color: #333;
-				margin-bottom: 15px;
+				margin-bottom: 0;
 				border-bottom: 2px solid #667eea;
 				padding-bottom: 10px;
 			}
@@ -64,9 +65,30 @@
 			.sidebar-messages {
 				flex: 1;
 				overflow-y: auto;
+				overflow-x: hidden;
 				display: flex;
 				flex-direction: column;
 				gap: 10px;
+				max-height: calc(100vh - 200px);
+				min-height: 300px;
+			}
+
+			.sidebar-messages::-webkit-scrollbar {
+				width: 6px;
+			}
+
+			.sidebar-messages::-webkit-scrollbar-track {
+				background: #f1f1f1;
+				border-radius: 3px;
+			}
+
+			.sidebar-messages::-webkit-scrollbar-thumb {
+				background: #888;
+				border-radius: 3px;
+			}
+
+			.sidebar-messages::-webkit-scrollbar-thumb:hover {
+				background: #555;
 			}
 
 			.sidebar-message {
@@ -303,6 +325,60 @@
 			.log-success {
 				color: #89d185;
 			}
+
+			.chat-input-container {
+				border-top: 2px solid #e0e0e0;
+				padding-top: 12px;
+			}
+
+			.chat-input-wrapper {
+				display: flex;
+				gap: 8px;
+			}
+
+			.chat-input {
+				flex: 1;
+				padding: 8px 12px;
+				border: 1px solid #e0e0e0;
+				border-radius: 6px;
+				font-size: 12px;
+				font-family: inherit;
+				outline: none;
+				transition: border-color 0.2s;
+			}
+
+			.chat-input:focus {
+				border-color: #667eea;
+			}
+
+			.chat-input::placeholder {
+				color: #999;
+			}
+
+			.chat-send-btn {
+				padding: 8px 16px;
+				background: #667eea;
+				color: white;
+				border: none;
+				border-radius: 6px;
+				font-size: 12px;
+				font-weight: 600;
+				cursor: pointer;
+				transition: all 0.2s;
+				flex-shrink: 0;
+				min-width: auto;
+			}
+
+			.chat-send-btn:hover:not(:disabled) {
+				background: #5568d3;
+				transform: translateY(-1px);
+			}
+
+			.chat-send-btn:disabled {
+				opacity: 0.5;
+				cursor: not-allowed;
+				transform: none;
+			}
 		</style>
 	</head>
 
@@ -370,6 +446,12 @@
 				<div class="sidebar-messages" id="sidebarMessages">
 					<p style="text-align: center; color: #999; font-size: 12px">Start recording to see messages...</p>
 				</div>
+				<div class="chat-input-container">
+					<div class="chat-input-wrapper">
+						<input type="text" class="chat-input" id="chatInput" placeholder="Type a message..." disabled />
+						<button class="chat-send-btn" id="sendBtn" onclick="sendTextMessage()" disabled>Send</button>
+					</div>
+				</div>
 			</div>
 		</div>
 
@@ -387,11 +469,15 @@
 			let recordingInterval = null
 			let totalBytesSent = 0
 			let chunksSent = 0
-			let displayedMessages = new Set()
 			let conversationId = null
 
 			let audioOutputContext = null
 			let currentSource = null
+
+			// Transcript tracking variables
+			let lastUserTranscriptTime = null
+			let currentUserTranscript = ''
+			let transcriptTimeout = null
 
 			function log(message, type = 'message') {
 				const logsContainer = document.getElementById('logs')
@@ -432,21 +518,36 @@
 			}
 
 			function addChatMessage(text, role) {
-				const key = `${role}:${text}`
-				if (displayedMessages.has(key)) return
-				displayedMessages.add(key)
-
 				const container = document.getElementById('sidebarMessages')
 				if (container.children[0]?.textContent.includes('Start recording')) {
 					container.innerHTML = ''
-					displayedMessages.clear()
 				}
 
 				const el = document.createElement('div')
 				el.className = `sidebar-message ${role}`
 				el.textContent = text
 				container.appendChild(el)
-				container.scrollTop = container.scrollHeight
+
+				// Auto scroll to bottom with smooth behavior
+				requestAnimationFrame(() => {
+					container.scrollTop = container.scrollHeight
+				})
+			}
+
+			function updateCurrentUserMessage(text) {
+				const container = document.getElementById('sidebarMessages')
+				const lastMessage = container.lastElementChild
+
+				if (lastMessage && lastMessage.classList.contains('user')) {
+					lastMessage.textContent = text
+				} else {
+					addChatMessage(text, 'user')
+				}
+
+				// Auto scroll to bottom with smooth behavior
+				requestAnimationFrame(() => {
+					container.scrollTop = container.scrollHeight
+				})
 			}
 
 			function showProcessing(text) {
@@ -481,6 +582,8 @@
 			function updateButtonStates(recording) {
 				document.getElementById('recordBtn').disabled = recording
 				document.getElementById('endBtn').disabled = !recording
+				document.getElementById('chatInput').disabled = !recording
+				document.getElementById('sendBtn').disabled = !recording
 			}
 
 			function initAudioContext() {
@@ -589,8 +692,34 @@
 				})
 
 				socket.on('user-transcript', (data) => {
-					document.getElementById('transcript').textContent = data.text
-					addChatMessage(data.text, 'user')
+					const text = data.text
+					document.getElementById('transcript').textContent = text
+
+					const now = Date.now()
+
+					// Clear any existing timeout
+					if (transcriptTimeout) {
+						clearTimeout(transcriptTimeout)
+					}
+
+					// If this is a new transcript or after 1 second of silence
+					if (!lastUserTranscriptTime || now - lastUserTranscriptTime > 1000) {
+						// Create new message
+						currentUserTranscript = text
+						addChatMessage(text, 'user')
+					} else {
+						// Update existing message
+						currentUserTranscript = text
+						updateCurrentUserMessage(text)
+					}
+
+					lastUserTranscriptTime = now
+
+					// Set timeout to finalize the message after 1 second of silence
+					transcriptTimeout = setTimeout(() => {
+						lastUserTranscriptTime = null
+						currentUserTranscript = ''
+					}, 1000)
 				})
 
 				socket.on('processing', (data) => {
@@ -602,6 +731,41 @@
 					updateStatus(`Error: ${data.code}`, 'disconnected')
 				})
 			}
+
+			function sendTextMessage() {
+				const input = document.getElementById('chatInput')
+				const message = input.value.trim()
+
+				if (!message) return
+
+				if (IS_DEV) log(`Sending text message: ${message}`)
+
+				// Add user message to chat
+				addChatMessage(message, 'user')
+
+				// Emit text message to server
+				socket.emit('text-message', {
+					text: message,
+					conversationId,
+					timestamp: Date.now()
+				})
+
+				// Clear input
+				input.value = ''
+			}
+
+			// Handle Enter key in chat input
+			document.addEventListener('DOMContentLoaded', () => {
+				const chatInput = document.getElementById('chatInput')
+				if (chatInput) {
+					chatInput.addEventListener('keypress', (e) => {
+						if (e.key === 'Enter' && !e.shiftKey) {
+							e.preventDefault()
+							sendTextMessage()
+						}
+					})
+				}
+			})
 
 			async function startRecording() {
 				try {
@@ -668,6 +832,14 @@
 				updateButtonStates(false)
 				resetRecordingState()
 				hideProcessing()
+
+				// Clear transcript state
+				if (transcriptTimeout) {
+					clearTimeout(transcriptTimeout)
+					transcriptTimeout = null
+				}
+				lastUserTranscriptTime = null
+				currentUserTranscript = ''
 			}
 
 			window.addEventListener('load', () => {
