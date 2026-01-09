@@ -83,6 +83,7 @@ export class AudioChunkService {
 
 	async cleanupOldAudioChunks(daysOld = 30): Promise<number> {
 		const cutoffDate = new Date()
+
 		cutoffDate.setDate(cutoffDate.getDate() - daysOld)
 
 		const result = await this.audioChunkRepository.delete({
@@ -90,6 +91,7 @@ export class AudioChunkService {
 		})
 
 		const deleted = result.affected || 0
+
 		this.logger.log(`Cleaned up ${deleted} old audio chunks`)
 
 		return deleted
@@ -99,6 +101,7 @@ export class AudioChunkService {
 		const result = await this.audioChunkRepository.delete({ messageId })
 
 		const deleted = result.affected || 0
+
 		this.logger.log(`Deleted ${deleted} audio chunks for message: ${messageId}`)
 
 		return deleted
@@ -118,6 +121,7 @@ export class AudioChunkService {
 		})
 
 		const deleted = result.affected || 0
+
 		this.logger.log(`Deleted ${deleted} audio chunks for conversation: ${conversationId}`)
 
 		return deleted

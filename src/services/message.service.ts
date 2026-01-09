@@ -31,7 +31,6 @@ export class MessageService {
 		})
 
 		const messageIndex = lastMessage ? lastMessage.messageIndex + 1 : 0
-
 		const message = this.messageRepository.create({
 			conversationId: conversation.id,
 			role: dto.role,
@@ -55,6 +54,7 @@ export class MessageService {
 
 		for (const messageDto of messages) {
 			const message = await this.saveMessage(messageDto)
+
 			savedMessages.push(message)
 		}
 

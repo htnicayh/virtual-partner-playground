@@ -95,6 +95,7 @@ export class SessionService {
 		})
 
 		const deleted = result.affected || 0
+
 		this.logger.log(`Cleaned up ${deleted} inactive sessions`)
 
 		return deleted

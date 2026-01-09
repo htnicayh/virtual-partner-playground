@@ -81,6 +81,7 @@ export class ConversationService {
 
 		if (dto.status) {
 			conversation.status = dto.status
+
 			if (dto.status === 'ended') {
 				conversation.endedAt = new Date()
 			}

@@ -26,6 +26,7 @@ export class UserService {
 
 	async findOrCreateUser(dto: InitUserDto): Promise<User> {
 		let user: User | null = null
+		let anonymousId: string | undefined
 
 		if (dto.sessionToken) {
 			user = await this.userRepository.findOne({
@@ -34,14 +35,15 @@ export class UserService {
 		}
 
 		if (!user && dto.fingerprint) {
-			const anonymousId = this.generateAnonymousId(dto.fingerprint)
+			anonymousId = this.generateAnonymousId(dto.fingerprint)
+
 			user = await this.userRepository.findOne({ where: { anonymousId } })
 		}
 
 		if (!user) {
 			const sessionToken = dto.sessionToken || this.generateSessionToken()
-			const anonymousId = dto.fingerprint ? this.generateAnonymousId(dto.fingerprint) : undefined
 
+			anonymousId = dto.fingerprint ? this.generateAnonymousId(dto.fingerprint) : undefined
 			user = this.userRepository.create({
 				anonymousId,
 				sessionToken,
@@ -51,9 +53,11 @@ export class UserService {
 			})
 
 			user = await this.userRepository.save(user)
+
 			this.logger.log(`Created new anonymous user: ${user.id}`)
 		} else {
 			user.lastSeenAt = new Date()
+
 			await this.userRepository.save(user)
 		}
 
