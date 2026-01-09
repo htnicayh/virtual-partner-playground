@@ -71,3 +71,14 @@ export const cleanTranscript = (text: string): string => {
 
 	return cleaned
 }
+
+
+export const cleanFinalTranscript = (text: string): string => {
+	let cleaned = text
+		.trim()
+		.replace(/\s+/g, ' ') // Remove multiple spaces
+		.replace(/\s+([.,!?;:])/g, '$1') // Remove space before punctuation
+		.replace(/([.,!?;:])\s*([.,!?;:])/g, '$1$2') // Remove space between punctuation
+
+	return cleaned
+}

@@ -17,8 +17,11 @@ import { AudioChunk, StartStream } from '../commons/interfaces/message-body.inte
 import { TranscriptState } from '../commons/interfaces/transcript-state.interface'
 import { AudioService } from '../services/audio.service'
 import { CacheService } from '../services/cache.service'
+import { ConversationService } from '../services/conversation.service'
 import { LlmService } from '../services/llm.service'
-import { cleanTranscript } from '../utils'
+import { MessageService } from '../services/message.service'
+import { UserService } from '../services/user.service'
+import { cleanFinalTranscript, cleanTranscript } from '../utils'
 
 @WebSocketGateway({
 	cors: {
@@ -42,7 +45,10 @@ export class AudioStreamGateway implements OnGatewayConnection, OnGatewayDisconn
 		private readonly configService: ConfigService,
 		private readonly audioService: AudioService,
 		private readonly cacheService: CacheService,
-		private readonly llmService: LlmService
+		private readonly llmService: LlmService,
+		private readonly conversationService: ConversationService,
+		private readonly messageService: MessageService,
+		private readonly userService: UserService
 	) {
 		this.systemInstruction = `You are an English conversation teacher. 
 Your role is to:
@@ -95,6 +101,32 @@ Keep responses conversational and encouraging.`
 
 		try {
 			await this.audioService.createAudioSession(clientID, mb.sessionId, mb.conversationId)
+
+			// Auto-create user if not exists
+			let user
+
+			try {
+				user = await this.userService.getUserById(mb.userId)
+			} catch (error) {
+				// User doesn't exist, create new one with fingerprint
+				this.logger.log(`[${clientID}] User ${mb.userId} not found, creating new user with fingerprint`)
+
+				user = await this.userService.findOrCreateUser({ fingerprint: mb.userId })
+			}
+
+			// Create conversation in database
+			try {
+				await this.conversationService.createConversation(user.id, {
+					conversationId: mb.conversationId,
+					sessionId: mb.sessionId,
+					socketId: clientID
+				})
+
+				this.logger.log(`[${clientID}] Created conversation: ${mb.conversationId} for user: ${user.id}`)
+			} catch (error) {
+				// Conversation might already exist, log and continue
+				this.logger.warn(`[${clientID}] Failed to create conversation: ${error.message}`)
+			}
 
 			const config: LiveAPIConfig = {
 				model: this.geminiModel,
@@ -186,6 +218,28 @@ Keep responses conversational and encouraging.`
 
 		this.transcriptStates.delete(clientID)
 
+		// Update conversation metrics before ending
+		try {
+			const audioSession = await this.audioService.getAudioSession(clientID)
+
+			if (audioSession?.conversationId) {
+				// Get audio metrics
+				const audioBytes = audioSession.totalBytes || 0
+				const audioChunks = audioSession.totalChunksReceived || 0
+
+				// Update conversation status and metrics
+				await this.conversationService.updateConversation(audioSession.conversationId, {
+					status: 'ended',
+					audioBytes,
+					audioChunks
+				})
+
+				this.logger.log(`[${clientID}] Updated conversation ${audioSession.conversationId} metrics`)
+			}
+		} catch (error) {
+			this.logger.error(`[${clientID}] Failed to update conversation: ${error.message}`)
+		}
+
 		await this.cacheService.setSessionState(clientID, { isClosed: true, closedAt: Date.now() })
 		await Promise.allSettled([
 			this.cacheService.clearClientCaches(clientID),
@@ -198,16 +252,6 @@ Keep responses conversational and encouraging.`
 			message: 'Conversation session closed',
 			timestamp: Date.now()
 		})
-	}
-
-	private cleanFinalTranscript(text: string): string {
-		let cleaned = text
-			.trim()
-			.replace(/\s+/g, ' ') // Remove multiple spaces
-			.replace(/\s+([.,!?;:])/g, '$1') // Remove space before punctuation
-			.replace(/([.,!?;:])\s*([.,!?;:])/g, '$1$2') // Remove space between punctuation
-
-		return cleaned
 	}
 
 	private handleUserTranscript(client: Socket, text: string) {
@@ -272,12 +316,12 @@ Keep responses conversational and encouraging.`
 		}
 
 		// Set new timeout to emit after 1 second of silence
-		state.timeout = setTimeout(() => {
+		state.timeout = setTimeout(async () => {
 			const currentState = this.transcriptStates.get(clientID)
 
 			if (currentState && currentState.accumulatedText) {
 				// Clean up the accumulated text
-				const finalText = this.cleanFinalTranscript(currentState.accumulatedText)
+				const finalText = cleanFinalTranscript(currentState.accumulatedText)
 
 				this.logger.debug(`[${clientID}] Final transcript: "${finalText}"`)
 
@@ -287,6 +331,25 @@ Keep responses conversational and encouraging.`
 						text: finalText,
 						timestamp: Date.now()
 					})
+
+					// Save user message to database
+					try {
+						const audioSession = await this.audioService.getAudioSession(clientID)
+
+						if (audioSession?.conversationId) {
+							await this.messageService.saveMessage({
+								conversationId: audioSession.conversationId,
+								role: 'user',
+								content: finalText,
+								contentType: 'text',
+								isFinal: true,
+								hasAudio: true
+							})
+							this.logger.debug(`[${clientID}] Saved user message to DB`)
+						}
+					} catch (error) {
+						this.logger.error(`[${clientID}] Failed to save user message: ${error.message}`)
+					}
 
 					// Update last emitted text
 					currentState.lastEmittedText = finalText

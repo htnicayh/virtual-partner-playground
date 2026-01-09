@@ -136,14 +136,17 @@
 				border-left-color: #4caf50;
 				background: #e8f5e9;
 			}
+
 			.status.disconnected {
 				border-left-color: #f44336;
 				background: #ffebee;
 			}
+
 			.status.recording {
 				border-left-color: #ff9800;
 				background: #fff3e0;
 			}
+
 			.status.processing {
 				border-left-color: #2196f3;
 				background: #e3f2fd;
@@ -188,13 +191,16 @@
 				background: #667eea;
 				color: white;
 			}
+
 			.btn-primary:hover:not(:disabled) {
 				background: #5568d3;
 			}
+
 			.btn-danger {
 				background: #f44336;
 				color: white;
 			}
+
 			.btn-danger:hover:not(:disabled) {
 				background: #da190b;
 			}
@@ -256,6 +262,7 @@
 				0% {
 					transform: rotate(0deg);
 				}
+
 				100% {
 					transform: rotate(360deg);
 				}
@@ -442,7 +449,7 @@
 		</div>
 
 		<script>
-			const IS_DEV = false
+			const IS_DEV = true
 			const SERVER_URL = IS_DEV ? 'ws://localhost:3000' : 'wss://virtual-partner-backend-production.up.railway.app'
 
 			let socket = null
@@ -463,6 +470,50 @@
 			let lastUserTranscriptTime = null
 			let currentUserTranscript = ''
 			let transcriptTimeout = null
+
+			// Browser Fingerprinting for Anonymous Users
+			async function generateFingerprint() {
+				const components = [
+					navigator.userAgent,
+					navigator.language,
+					new Date().getTimezoneOffset(),
+					screen.width + 'x' + screen.height,
+					screen.colorDepth,
+					navigator.platform,
+					navigator.hardwareConcurrency || 'unknown',
+					navigator.deviceMemory || 'unknown'
+				]
+
+				const fingerprint = components.join('|')
+
+				let hash = 0
+
+				for (let i = 0; i < fingerprint.length; i++) {
+					const char = fingerprint.charCodeAt(i)
+
+					hash = (hash << 5) - hash + char
+					hash = hash & hash // Convert to 32bit integer
+				}
+
+				const hashStr = Math.abs(hash).toString(36)
+
+				return 'fp_' + hashStr
+			}
+
+			function getUserId() {
+				let userId = localStorage.getItem('userId')
+
+				if (!userId) {
+					userId = generateFingerprint()
+					localStorage.setItem('userId', userId)
+
+					if (IS_DEV) log(`Generated new userId: ${userId}`)
+				} else {
+					if (IS_DEV) log(`Using existing userId: ${userId}`)
+				}
+
+				return userId
+			}
 
 			function log(message, type = 'message') {
 				const logsContainer = document.getElementById('logs')
@@ -579,19 +630,28 @@
 			}
 
 			function playFullAIResponse(audioChunksBase64) {
-				if (!audioChunksBase64 || audioChunksBase64.length === 0) return
+				if (!audioChunksBase64 || audioChunksBase64.length === 0) {
+					return
+				}
 
 				initAudioContext()
 
 				let totalSamples = 0
+
 				const int16Arrays = []
 
 				for (const base64 of audioChunksBase64) {
 					const binary = atob(base64)
 					const bytes = new Uint8Array(binary.length)
-					for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i)
+
+					for (let i = 0; i < binary.length; i++) {
+						bytes[i] = binary.charCodeAt(i)
+					}
+
 					const int16 = new Int16Array(bytes.buffer)
+
 					int16Arrays.push(int16)
+
 					totalSamples += int16.length
 				}
 
@@ -799,7 +859,7 @@
 
 					conversationId = 'conv-' + Date.now()
 					socket.emit('start-stream', {
-						userId: 'user-' + Date.now(),
+						userId: getUserId(),
 						sessionId: 'session-' + Date.now(),
 						conversationId
 					})
