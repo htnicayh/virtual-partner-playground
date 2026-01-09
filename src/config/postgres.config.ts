@@ -7,6 +7,8 @@ import { User } from '../models/user.model'
 
 import 'dotenv/config'
 
+export const getDatabaseModels = () => [User, Conversation, Message, Session, AudioChunk]
+
 export const getDatabaseConfig = (): TypeOrmModuleOptions => ({
 	type: 'postgres',
 	host: process.env.DATABASE_HOST || 'localhost',
@@ -14,7 +16,7 @@ export const getDatabaseConfig = (): TypeOrmModuleOptions => ({
 	username: process.env.DATABASE_USERNAME || 'postgres',
 	password: process.env.DATABASE_PASSWORD,
 	database: process.env.DATABASE_NAME || 'postgres',
-	entities: [User, Conversation, Message, Session, AudioChunk],
+	entities: getDatabaseModels(),
 	synchronize: process.env.DATABASE_SYNCHRONIZE === 'false',
 	logging: process.env.DATABASE_LOGGING === 'true',
 	ssl: false,
@@ -24,5 +26,3 @@ export const getDatabaseConfig = (): TypeOrmModuleOptions => ({
 		}
 	}
 })
-
-export const getDatabaseModels = () => [User, Conversation, Message, Session, AudioChunk]

@@ -1,103 +1,113 @@
-import { RedisService } from '@liaoliaots/nestjs-redis'
-import { Injectable } from '@nestjs/common'
-import { Redis } from 'ioredis'
-
-interface VoiceSession {
-	userId: string
-	conversationId: string
-	status: 'active' | 'idle' | 'processing'
-	lastActivityAt: string
-	createdAt: string
-}
+import { Injectable, Logger, NotFoundException } from '@nestjs/common'
+import { InjectRepository } from '@nestjs/typeorm'
+import { LessThan, Repository } from 'typeorm'
+import { CreateSessionDto } from '../dtos/session/create-session.dto'
+import { SessionResponseDto } from '../dtos/session/session-response.dto'
+import { Session, User } from '../models'
 
 @Injectable()
 export class SessionService {
-	private readonly SESSION_KEY_PREFIX = 'voice_session:'
-	private readonly SESSION_EXPIRY = 3600 // 1 hour
+	private readonly logger = new Logger(SessionService.name)
 
-	private readonly redisClient: Redis
+	constructor(
+		@InjectRepository(Session)
+		private readonly sessionRepository: Repository<Session>,
+		@InjectRepository(User)
+		private readonly userRepository: Repository<User>
+	) {}
 
-	constructor(private readonly redisService: RedisService) {
-		this.redisClient = this.redisService.getClient()
-	}
+	async createSession(userId: string, dto: CreateSessionDto, sessionToken: string): Promise<Session> {
+		const user = await this.userRepository.findOne({ where: { id: userId } })
 
-	async createSession(userId: string, conversationId: string): Promise<VoiceSession> {
-		const sessionId = `${this.SESSION_KEY_PREFIX}${userId}:${conversationId}`
-		const now = new Date().toISOString()
-
-		const session: VoiceSession = {
-			userId,
-			conversationId,
-			status: 'active',
-			lastActivityAt: now,
-			createdAt: now
+		if (!user) {
+			throw new NotFoundException('User not found')
 		}
 
-		await this.redisClient.setex(sessionId, this.SESSION_EXPIRY, JSON.stringify(session))
+		const session = this.sessionRepository.create({
+			userId,
+			socketId: dto.socketId,
+			sessionToken,
+			ipAddress: dto.ipAddress,
+			userAgent: dto.userAgent,
+			isActive: true,
+			connectedAt: new Date(),
+			lastActivityAt: new Date()
+		})
+
+		const saved = await this.sessionRepository.save(session)
+
+		this.logger.log(`Created session: ${saved.id} for user: ${userId}`)
+
+		return saved
+	}
+
+	async endSession(socketId: string): Promise<void> {
+		const session = await this.sessionRepository.findOne({ where: { socketId } })
+
+		if (!session) {
+			throw new NotFoundException('Session not found')
+		}
+
+		session.isActive = false
+		session.disconnectedAt = new Date()
+
+		await this.sessionRepository.save(session)
+
+		this.logger.log(`Ended session: ${session.id}`)
+	}
+
+	async updateSessionActivity(socketId: string): Promise<void> {
+		await this.sessionRepository.update({ socketId }, { lastActivityAt: new Date() })
+	}
+
+	async getSessionBySocketId(socketId: string): Promise<Session> {
+		const session = await this.sessionRepository.findOne({ where: { socketId } })
+
+		if (!session) {
+			throw new NotFoundException('Session not found')
+		}
 
 		return session
 	}
 
-	async getSession(userId: string, conversationId: string): Promise<VoiceSession | null> {
-		const sessionId = `${this.SESSION_KEY_PREFIX}${userId}:${conversationId}`
-		const data = await this.redisClient.get(sessionId)
-
-		if (!data) {
-			return null
-		}
-
-		return JSON.parse(data)
+	async getActiveSessions(userId: string): Promise<Session[]> {
+		return this.sessionRepository.find({
+			where: { userId, isActive: true },
+			order: { lastActivityAt: 'DESC' }
+		})
 	}
 
-	async updateSessionStatus(
-		userId: string,
-		conversationId: string,
-		status: 'active' | 'idle' | 'processing'
-	): Promise<VoiceSession> {
-		const sessionId = `${this.SESSION_KEY_PREFIX}${userId}:${conversationId}`
-		const session = await this.getSession(userId, conversationId)
-
-		if (!session) {
-			throw new Error('Session not found')
-		}
-
-		const updatedSession: VoiceSession = {
-			...session,
-			status,
-			lastActivityAt: new Date().toISOString()
-		}
-
-		await this.redisClient.setex(sessionId, this.SESSION_EXPIRY, JSON.stringify(updatedSession))
-
-		return updatedSession
+	async getUserSessions(userId: string, limit = 50): Promise<Session[]> {
+		return this.sessionRepository.find({
+			where: { userId },
+			order: { connectedAt: 'DESC' },
+			take: limit
+		})
 	}
 
-	async deleteSession(userId: string, conversationId: string): Promise<void> {
-		const sessionId = `${this.SESSION_KEY_PREFIX}${userId}:${conversationId}`
+	async cleanupInactiveSessions(daysOld = 7): Promise<number> {
+		const cutoffDate = new Date()
+		cutoffDate.setDate(cutoffDate.getDate() - daysOld)
 
-		await this.redisClient.del(sessionId)
+		const result = await this.sessionRepository.delete({
+			isActive: false,
+			disconnectedAt: LessThan(cutoffDate)
+		})
+
+		const deleted = result.affected || 0
+		this.logger.log(`Cleaned up ${deleted} inactive sessions`)
+
+		return deleted
 	}
 
-	async getUserActiveSessions(userId: string): Promise<VoiceSession[]> {
-		const pattern = `${this.SESSION_KEY_PREFIX}${userId}:*`
-		const keys = await this.redisClient.keys(pattern)
-
-		const sessions: VoiceSession[] = []
-
-		for (const key of keys) {
-			const data = await this.redisClient.get(key)
-
-			if (data) {
-				sessions.push(JSON.parse(data))
-			}
+	mapToResponseDto(session: Session): SessionResponseDto {
+		return {
+			id: session.id,
+			socketId: session.socketId,
+			isActive: session.isActive,
+			connectedAt: session.connectedAt,
+			disconnectedAt: session.disconnectedAt,
+			lastActivityAt: session.lastActivityAt
 		}
-
-		return sessions
-	}
-
-	async extendSessionExpiry(userId: string, conversationId: string): Promise<void> {
-		const sessionId = `${this.SESSION_KEY_PREFIX}${userId}:${conversationId}`
-
-		await this.redisClient.expire(sessionId, this.SESSION_EXPIRY)
 	}
 }
