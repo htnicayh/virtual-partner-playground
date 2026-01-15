@@ -17,6 +17,7 @@ export class UserService {
 
 	generateAnonymousId(fingerprint: any): string {
 		const data = JSON.stringify(fingerprint)
+
 		return crypto.createHash('sha256').update(data).digest('hex').substring(0, 32)
 	}
 

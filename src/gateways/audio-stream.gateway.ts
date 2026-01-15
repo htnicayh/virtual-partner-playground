@@ -36,7 +36,7 @@ export class AudioStreamGateway implements OnGatewayConnection, OnGatewayDisconn
 	private readonly systemInstruction: string
 	private readonly geminiModel: string
 	private readonly SILENCE_TIMEOUT = 1000 // 1 second
-	private transcriptStates: Map<string, TranscriptState> = new Map()
+	private readonly transcriptStates: Map<string, TranscriptState> = new Map()
 
 	@WebSocketServer()
 	server: Server

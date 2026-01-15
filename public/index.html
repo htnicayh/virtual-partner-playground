@@ -109,6 +109,49 @@
 				border-left: 3px solid #4caf50;
 			}
 
+			.sidebar-message.loading {
+				background: #f1f8e9;
+				border-left: 3px solid #4caf50;
+				text-align: left;
+				padding: 15px 12px;
+			}
+
+			.loading-dots {
+				display: inline-flex;
+				align-items: center;
+				gap: 3px;
+			}
+
+			.loading-dots span {
+				display: inline-block;
+				width: 6px;
+				height: 6px;
+				background-color: #4caf50;
+				border-radius: 50%;
+				animation: loading-bounce 1.4s infinite ease-in-out both;
+			}
+
+			.loading-dots span:nth-child(1) {
+				animation-delay: -0.32s;
+			}
+
+			.loading-dots span:nth-child(2) {
+				animation-delay: -0.16s;
+			}
+
+			@keyframes loading-bounce {
+				0%,
+				80%,
+				100% {
+					transform: scale(0);
+					opacity: 0.5;
+				}
+				40% {
+					transform: scale(1);
+					opacity: 1;
+				}
+			}
+
 			h1 {
 				text-align: center;
 				color: #333;
@@ -237,37 +280,6 @@
 				font-style: italic;
 			}
 
-			.processing-indicator {
-				display: none;
-				text-align: center;
-				padding: 20px;
-				color: #667eea;
-			}
-
-			.processing-indicator.active {
-				display: block;
-			}
-
-			.spinner {
-				display: inline-block;
-				width: 20px;
-				height: 20px;
-				border: 3px solid #f3f3f3;
-				border-top: 3px solid #667eea;
-				border-radius: 50%;
-				animation: spin 1s linear infinite;
-			}
-
-			@keyframes spin {
-				0% {
-					transform: rotate(0deg);
-				}
-
-				100% {
-					transform: rotate(360deg);
-				}
-			}
-
 			.metrics {
 				display: grid;
 				grid-template-columns: 1fr 1fr;
@@ -386,11 +398,6 @@
 					<button class="btn-danger" id="endBtn" onclick="endConversation()" disabled>Finish</button>
 				</div>
 
-				<div class="processing-indicator" id="processing">
-					<div class="spinner"></div>
-					<p id="processingText" style="margin-top: 10px; font-size: 13px"></p>
-				</div>
-
 				<div class="info-section">
 					<div class="section-title">Your Transcription</div>
 					<div class="transcript-box" id="transcript">
@@ -449,7 +456,7 @@
 		</div>
 
 		<script>
-			const IS_DEV = false
+			const IS_DEV = true
 			const SERVER_URL = IS_DEV ? 'ws://localhost:3000' : 'wss://virtual-partner-backend-production.up.railway.app'
 
 			let socket = null
@@ -492,7 +499,7 @@
 					const char = fingerprint.charCodeAt(i)
 
 					hash = (hash << 5) - hash + char
-					hash = hash & hash // Convert to 32bit integer
+					hash = hash & hash
 				}
 
 				const hashStr = Math.abs(hash).toString(36)
@@ -569,6 +576,30 @@
 				})
 			}
 
+			function showLoadingMessage() {
+				const container = document.getElementById('sidebarMessages')
+				const el = document.createElement('div')
+
+				removeLoadingMessage()
+
+				el.className = 'sidebar-message loading'
+				el.id = 'loading-message'
+				el.innerHTML = '<div class="loading-dots"><span></span><span></span><span></span></div>'
+
+				container.appendChild(el)
+
+				requestAnimationFrame(() => {
+					container.scrollTop = container.scrollHeight
+				})
+			}
+
+			function removeLoadingMessage() {
+				const loadingMsg = document.getElementById('loading-message')
+				if (loadingMsg) {
+					loadingMsg.remove()
+				}
+			}
+
 			function updateCurrentUserMessage(text) {
 				const container = document.getElementById('sidebarMessages')
 				const lastMessage = container.lastElementChild
@@ -582,42 +613,6 @@
 				requestAnimationFrame(() => {
 					container.scrollTop = container.scrollHeight
 				})
-			}
-
-			function showProcessing(text) {
-				const indicator = document.getElementById('processing')
-				document.getElementById('processingText').textContent = text
-				indicator.classList.add('active')
-			}
-
-			function hideProcessing() {
-				document.getElementById('processing').classList.remove('active')
-			}
-
-			function stopAudioCapture() {
-				isRecording = false
-				if (processor) {
-					processor.disconnect()
-					source.disconnect()
-				}
-				if (mediaStream) mediaStream.getTracks().forEach((track) => track.stop())
-				if (audioContext && audioContext.state !== 'closed') audioContext.close()
-				if (recordingInterval) clearInterval(recordingInterval)
-				audioContext = processor = source = mediaStream = null
-			}
-
-			function resetRecordingState() {
-				recordingStartTime = null
-				totalBytesSent = 0
-				chunksSent = 0
-				updateMetrics()
-			}
-
-			function updateButtonStates(recording) {
-				document.getElementById('recordBtn').disabled = recording
-				document.getElementById('endBtn').disabled = !recording
-				document.getElementById('chatInput').disabled = !recording
-				updateSendIconState()
 			}
 
 			function initAudioContext() {
@@ -681,6 +676,32 @@
 				}
 			}
 
+			function stopAudioCapture() {
+				isRecording = false
+				if (processor) {
+					processor.disconnect()
+					source.disconnect()
+				}
+				if (mediaStream) mediaStream.getTracks().forEach((track) => track.stop())
+				if (audioContext && audioContext.state !== 'closed') audioContext.close()
+				if (recordingInterval) clearInterval(recordingInterval)
+				audioContext = processor = source = mediaStream = null
+			}
+
+			function resetRecordingState() {
+				recordingStartTime = null
+				totalBytesSent = 0
+				chunksSent = 0
+				updateMetrics()
+			}
+
+			function updateButtonStates(recording) {
+				document.getElementById('recordBtn').disabled = recording
+				document.getElementById('endBtn').disabled = !recording
+				document.getElementById('chatInput').disabled = !recording
+				updateSendIconState()
+			}
+
 			async function connect() {
 				updateStatus('Connecting...', 'processing')
 				if (IS_DEV) log('Attempting to connect to server...')
@@ -712,7 +733,11 @@
 
 				socket.on('ai-response', (data) => {
 					document.getElementById('response').textContent = data.text
-					if (data.isFinal) addChatMessage(data.text, 'assistant')
+					if (data.isFinal) {
+						addChatMessage(data.text, 'assistant')
+						// Chỉ ẩn loading khi AI response đã hoàn tất
+						removeLoadingMessage()
+					}
 				})
 
 				socket.on('ai-audio-complete', (data) => {
@@ -731,7 +756,6 @@
 
 				socket.on('stream-started', () => {
 					if (IS_DEV) log('Stream started', 'success')
-					showProcessing('Recording audio...')
 				})
 
 				socket.on('user-transcript', (data) => {
@@ -747,6 +771,8 @@
 					if (!lastUserTranscriptTime || now - lastUserTranscriptTime > 1000) {
 						currentUserTranscript = text
 						addChatMessage(text, 'user')
+						// Hiển thị loading ngay sau khi user nói xong
+						showLoadingMessage()
 					} else {
 						currentUserTranscript = text
 						updateCurrentUserMessage(text)
@@ -757,11 +783,14 @@
 					transcriptTimeout = setTimeout(() => {
 						lastUserTranscriptTime = null
 						currentUserTranscript = ''
+						// Hiển thị loading sau khi user dừng nói 1 giây
+						showLoadingMessage()
 					}, 1000)
 				})
 
 				socket.on('processing', (data) => {
-					showProcessing(`Processing: ${data.status}`)
+					if (IS_DEV) log(`Processing: ${data.status}`)
+					showLoadingMessage()
 				})
 
 				socket.on('error', (data) => {
@@ -884,7 +913,6 @@
 				updateButtonStates(false)
 				updateSendIconState()
 				resetRecordingState()
-				hideProcessing()
 
 				if (transcriptTimeout) {
 					clearTimeout(transcriptTimeout)
