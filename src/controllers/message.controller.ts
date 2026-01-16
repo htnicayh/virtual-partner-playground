@@ -46,13 +46,13 @@ export class MessageController {
 
 			return this.messageService.mapToResponseDto(message)
 		} catch (error) {
-			this.logger.error(`Save message error: ${error.message}`)
+			this.logger.error('Save message error', error.stack ?? error)
 
 			if (error instanceof HttpException) {
 				throw error
 			}
 
-			throw new HttpException(error.message, HttpStatus.INTERNAL_SERVER_ERROR)
+			throw new HttpException('Internal server error', HttpStatus.INTERNAL_SERVER_ERROR)
 		}
 	}
 
