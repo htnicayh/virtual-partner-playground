@@ -3,7 +3,7 @@ import { InjectRepository } from '@nestjs/typeorm'
 import { Repository } from 'typeorm'
 import { ConversationResponseDto } from '../dtos/conversation/conversation-response.dto'
 import { CreateConversationDto } from '../dtos/conversation/create-conversation.dto'
-import { UpdateConversationDto } from '../dtos/conversation/update-conversation.dto'
+import { ConversationStatus, UpdateConversationDto } from '../dtos/conversation/update-conversation.dto'
 import { Conversation, User } from '../models'
 
 @Injectable()
@@ -18,49 +18,38 @@ export class ConversationService {
 	) {}
 
 	async createConversation(userId: string, dto: CreateConversationDto): Promise<Conversation> {
-		const user = await this.userRepository.findOne({ where: { id: userId } })
+		return this.conversationRepository.manager.transaction(async (manager) => {
+			const user = await manager.findOne(User, { where: { id: userId } })
 
-		if (!user) {
-			throw new NotFoundException('User not found')
-		}
+			if (!user) {
+				throw new NotFoundException('User not found')
+			}
 
-		const existing = await this.conversationRepository.findOne({
-			where: { conversationId: dto.conversationId }
+			const existing = await manager.findOne(Conversation, {
+				where: { conversationId: dto.conversationId }
+			})
+
+			if (existing) {
+				throw new BadRequestException('Conversation ID already exists')
+			}
+
+			const conversation = manager.create(Conversation, {
+				userId,
+				conversationId: dto.conversationId,
+				sessionId: dto.sessionId || '',
+				socketId: dto.socketId || '',
+				status: 'active',
+				startedAt: new Date()
+			})
+
+			const saved = await manager.save(conversation)
+
+			await manager.increment(User, { id: userId }, 'totalConversations', 1)
+
+			this.logger.log(`Created conversation: ${saved.conversationId} for user: ${userId}`)
+
+			return saved
 		})
-
-		if (existing) {
-			throw new BadRequestException('Conversation ID already exists')
-		}
-
-		const conversation = this.conversationRepository.create({
-			userId,
-			conversationId: dto.conversationId,
-			sessionId: dto.sessionId || '',
-			socketId: dto.socketId || '',
-			status: 'active',
-			startedAt: new Date()
-		})
-
-		const saved = await this.conversationRepository.save(conversation)
-
-		await this.userRepository.increment({ id: userId }, 'totalConversations', 1)
-
-		this.logger.log(`Created conversation: ${saved.conversationId} for user: ${userId}`)
-
-		return saved
-	}
-
-	async getConversationByConversationId(conversationId: string): Promise<Conversation> {
-		const conversation = await this.conversationRepository.findOne({
-			where: { conversationId },
-			relations: ['user']
-		})
-
-		if (!conversation) {
-			throw new NotFoundException('Conversation not found')
-		}
-
-		return conversation
 	}
 
 	async getConversationById(id: string): Promise<Conversation> {
@@ -77,12 +66,12 @@ export class ConversationService {
 	}
 
 	async updateConversation(conversationId: string, dto: UpdateConversationDto): Promise<void> {
-		const conversation = await this.getConversationByConversationId(conversationId)
+		const conversation = await this.getConversationById(conversationId)
 
 		if (dto.status) {
 			conversation.status = dto.status
 
-			if (dto.status === 'ended') {
+			if (dto.status === ConversationStatus.ENDED) {
 				conversation.endedAt = new Date()
 			}
 		}
@@ -98,9 +87,9 @@ export class ConversationService {
 	}
 
 	async endConversation(conversationId: string): Promise<void> {
-		const conversation = await this.getConversationByConversationId(conversationId)
+		const conversation = await this.getConversationById(conversationId)
 
-		conversation.status = 'ended'
+		conversation.status = ConversationStatus.ENDED
 		conversation.endedAt = new Date()
 
 		await this.conversationRepository.save(conversation)

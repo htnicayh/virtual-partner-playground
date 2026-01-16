@@ -1,5 +1,5 @@
 import { LiveServerMessage, Modality } from '@google/genai'
-import { Injectable, Logger } from '@nestjs/common'
+import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common'
 import { ConfigService } from '@nestjs/config'
 import {
 	ConnectedSocket,
@@ -110,12 +110,16 @@ Keep responses conversational and encouraging.`
 			try {
 				user = await this.userService.getUserById(mb.userId)
 			} catch (error) {
-				if (error?.status === 404 || error?.message?.includes('not found')) {
+				if (error instanceof NotFoundException || error?.message?.includes('not found')) {
 					this.logger.log(`[${clientID}] User ${mb.userId} not found, creating new user with fingerprint`)
 					user = await this.userService.findOrCreateUser({ fingerprint: mb.userId })
 				} else {
 					throw error
 				}
+			}
+
+			if (!user) {
+				throw new BadRequestException('Failed to resolve user')
 			}
 
 			// Create conversation in database
@@ -128,8 +132,12 @@ Keep responses conversational and encouraging.`
 
 				this.logger.log(`[${clientID}] Created conversation: ${mb.conversationId} for user: ${user.id}`)
 			} catch (error) {
-				// Conversation might already exist, log and continue
-				this.logger.warn(`[${clientID}] Failed to create conversation: ${error.message}`)
+				if (error instanceof BadRequestException) {
+					this.logger.warn(`[${clientID}] Conversation already exists: ${error.message}`)
+				} else {
+					this.logger.error(`[${clientID}] Failed to create conversation: ${error.message}`)
+					throw error
+				}
 			}
 
 			const config: LiveAPIConfig = {

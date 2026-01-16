@@ -3,7 +3,6 @@ import {
 	Controller,
 	DefaultValuePipe,
 	Get,
-	Headers,
 	HttpException,
 	HttpStatus,
 	Logger,
@@ -11,35 +10,59 @@ import {
 	ParseIntPipe,
 	Post,
 	Put,
-	Query
+	Query,
+	Req,
+	UseGuards
 } from '@nestjs/common'
+import { SessionGuard } from '../commons/guards/session.guard'
 import { ConversationListResponseDto } from '../dtos/conversation/conversation-list-response.dto'
 import { ConversationResponseDto } from '../dtos/conversation/conversation-response.dto'
 import { CreateConversationDto } from '../dtos/conversation/create-conversation.dto'
 import { UpdateConversationDto } from '../dtos/conversation/update-conversation.dto'
 import { ConversationService } from '../services/conversation.service'
-import { UserService } from '../services/user.service'
 
 @Controller()
+@UseGuards(SessionGuard)
 export class ConversationController {
 	private readonly logger = new Logger(ConversationController.name)
 
-	constructor(
-		private readonly userService: UserService,
-		private readonly conversationService: ConversationService
-	) {}
+	constructor(private readonly conversationService: ConversationService) {}
+
+	@Get('/')
+	async getUserConversations(
+		@Req() req: any,
+		@Query('limit', new DefaultValuePipe(20), ParseIntPipe) limit: number,
+		@Query('offset', new DefaultValuePipe(0), ParseIntPipe) offset: number
+	): Promise<ConversationListResponseDto> {
+		try {
+			const user = req.user
+
+			const [conversations, total] = await Promise.all([
+				this.conversationService.getUserConversations(user.id, limit, offset),
+				this.conversationService.getUserConversationsCount(user.id)
+			])
+
+			return {
+				conversations: conversations.map((c) => this.conversationService.mapToResponseDto(c)),
+				total,
+				limit,
+				offset
+			}
+		} catch (error) {
+			this.logger.error(`Get conversations error: ${error.message}`)
+
+			if (error instanceof HttpException) {
+				throw error
+			}
+
+			throw new HttpException(error.message, HttpStatus.INTERNAL_SERVER_ERROR)
+		}
+	}
 
 	@Post('/')
-	async createConversation(
-		@Headers('x-session-token') sessionToken: string,
-		@Body() dto: CreateConversationDto
-	): Promise<ConversationResponseDto> {
-		if (!sessionToken) {
-			throw new HttpException('Session token required', HttpStatus.UNAUTHORIZED)
-		}
-
+	async createConversation(@Req() req: any, @Body() dto: CreateConversationDto): Promise<ConversationResponseDto> {
 		try {
-			const user = await this.userService.getUserBySessionToken(sessionToken)
+			const user = req.user
 			const conversation = await this.conversationService.createConversation(user.id, dto)
 
 			return this.conversationService.mapToResponseDto(conversation)
@@ -54,18 +77,14 @@ export class ConversationController {
 		}
 	}
 
-	@Get('/:conversationId')
+	@Get('id/:conversationId')
 	async getConversation(
-		@Headers('x-session-token') sessionToken: string,
+		@Req() req: any,
 		@Param('conversationId') conversationId: string
 	): Promise<ConversationResponseDto> {
-		if (!sessionToken) {
-			throw new HttpException('Session token required', HttpStatus.UNAUTHORIZED)
-		}
-
 		try {
-			const user = await this.userService.getUserBySessionToken(sessionToken)
-			const conversation = await this.conversationService.getConversationByConversationId(conversationId)
+			const user = req.user
+			const conversation = await this.conversationService.getConversationById(conversationId)
 
 			if (conversation.userId !== user.id) {
 				throw new HttpException('Conversation not found', HttpStatus.NOT_FOUND)
@@ -83,19 +102,15 @@ export class ConversationController {
 		}
 	}
 
-	@Put('/:conversationId')
+	@Put('id/:conversationId')
 	async updateConversation(
-		@Headers('x-session-token') sessionToken: string,
+		@Req() req: any,
 		@Param('conversationId') conversationId: string,
 		@Body() dto: UpdateConversationDto
 	): Promise<{ success: boolean; message: string }> {
-		if (!sessionToken) {
-			throw new HttpException('Session token required', HttpStatus.UNAUTHORIZED)
-		}
-
 		try {
-			const user = await this.userService.getUserBySessionToken(sessionToken)
-			const conversation = await this.conversationService.getConversationByConversationId(conversationId)
+			const user = req.user
+			const conversation = await this.conversationService.getConversationById(conversationId)
 
 			if (conversation.userId !== user.id) {
 				throw new HttpException('Conversation not found', HttpStatus.NOT_FOUND)
@@ -106,41 +121,6 @@ export class ConversationController {
 			return { success: true, message: 'Conversation updated successfully' }
 		} catch (error) {
 			this.logger.error(`Update conversation error: ${error.message}`)
-
-			if (error instanceof HttpException) {
-				throw error
-			}
-
-			throw new HttpException(error.message, HttpStatus.INTERNAL_SERVER_ERROR)
-		}
-	}
-
-	@Get('/')
-	async getUserConversations(
-		@Headers('x-session-token') sessionToken: string,
-		@Query('limit', new DefaultValuePipe(20), ParseIntPipe) limit: number,
-		@Query('offset', new DefaultValuePipe(0), ParseIntPipe) offset: number
-	): Promise<ConversationListResponseDto> {
-		if (!sessionToken) {
-			throw new HttpException('Session token required', HttpStatus.UNAUTHORIZED)
-		}
-
-		try {
-			const user = await this.userService.getUserBySessionToken(sessionToken)
-
-			const [conversations, total] = await Promise.all([
-				this.conversationService.getUserConversations(user.id, limit, offset),
-				this.conversationService.getUserConversationsCount(user.id)
-			])
-
-			return {
-				conversations: conversations.map((c) => this.conversationService.mapToResponseDto(c)),
-				total,
-				limit,
-				offset
-			}
-		} catch (error) {
-			this.logger.error(`Get conversations error: ${error.message}`)
 
 			if (error instanceof HttpException) {
 				throw error

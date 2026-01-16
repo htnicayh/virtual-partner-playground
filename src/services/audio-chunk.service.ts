@@ -87,7 +87,7 @@ export class AudioChunkService {
 
 	async cleanupOldAudioChunks(daysOld = 30): Promise<number> {
 		if (!Number.isFinite(daysOld) || daysOld <= 0) {
-			throw new BadRequestException('days must be a positive integer')
+			throw new BadRequestException('days must be a positive number')
 		}
 
 		const cutoffDate = new Date()

@@ -18,6 +18,10 @@ export class UserController {
 		} catch (error) {
 			this.logger.error(`Init user error: ${error.message}`)
 
+			if (error instanceof HttpException) {
+				throw error
+			}
+
 			throw new HttpException(error.message, HttpStatus.INTERNAL_SERVER_ERROR)
 		}
 	}

@@ -499,7 +499,7 @@
 					const char = fingerprint.charCodeAt(i)
 
 					hash = (hash << 5) - hash + char
-					hash = hash & hash
+					hash = hash | 0
 				}
 
 				const hashStr = Math.abs(hash).toString(36)
@@ -678,10 +678,8 @@
 
 			function stopAudioCapture() {
 				isRecording = false
-				if (processor) {
-					processor.disconnect()
-					source.disconnect()
-				}
+				if (processor) processor.disconnect()
+				if (source) source.disconnect()
 				if (mediaStream) mediaStream.getTracks().forEach((track) => track.stop())
 				if (audioContext && audioContext.state !== 'closed') audioContext.close()
 				if (recordingInterval) clearInterval(recordingInterval)

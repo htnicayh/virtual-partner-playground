@@ -1,18 +1,21 @@
 import {
 	Body,
 	Controller,
+	DefaultValuePipe,
 	Delete,
 	Get,
-	Headers,
 	HttpException,
 	HttpStatus,
 	Logger,
 	Param,
+	ParseIntPipe,
 	Post,
 	Put,
-	Query
+	Query,
+	Req,
+	UseGuards
 } from '@nestjs/common'
-
+import { SessionGuard } from '../commons/guards/session.guard'
 import { CreateSessionDto } from '../dtos/session/create-session.dto'
 import { SessionsListResponseDto } from '../dtos/session/sessions-list-response.dto'
 import { SessionService } from '../services/session.service'
@@ -29,9 +32,10 @@ export class SessionController {
 
 	@Post('/')
 	async createSession(
-		@Headers('x-session-token') sessionToken: string,
+		@Req() req: any,
 		@Body() dto: CreateSessionDto
 	): Promise<{ success: boolean; sessionId: string }> {
+		const sessionToken = req.headers['x-session-token']
 		if (!sessionToken) {
 			throw new HttpException('Session token required', HttpStatus.UNAUTHORIZED)
 		}
@@ -53,6 +57,7 @@ export class SessionController {
 	}
 
 	@Put('/:socketId/end')
+	@UseGuards(SessionGuard)
 	async endSession(@Param('socketId') socketId: string): Promise<{ success: boolean; message: string }> {
 		try {
 			await this.sessionService.endSession(socketId)
@@ -70,6 +75,7 @@ export class SessionController {
 	}
 
 	@Put('/:socketId/activity')
+	@UseGuards(SessionGuard)
 	async updateSessionActivity(@Param('socketId') socketId: string): Promise<{ success: boolean; message: string }> {
 		try {
 			await this.sessionService.updateSessionActivity(socketId)
@@ -87,13 +93,10 @@ export class SessionController {
 	}
 
 	@Get('/active')
-	async getActiveSessions(@Headers('x-session-token') sessionToken: string): Promise<SessionsListResponseDto> {
-		if (!sessionToken) {
-			throw new HttpException('Session token required', HttpStatus.UNAUTHORIZED)
-		}
-
+	@UseGuards(SessionGuard)
+	async getActiveSessions(@Req() req: any): Promise<SessionsListResponseDto> {
 		try {
-			const user = await this.userService.getUserBySessionToken(sessionToken)
+			const user = req.user
 			const sessions = await this.sessionService.getActiveSessions(user.id)
 
 			return {
@@ -112,18 +115,14 @@ export class SessionController {
 	}
 
 	@Get('/')
+	@UseGuards(SessionGuard)
 	async getUserSessions(
-		@Headers('x-session-token') sessionToken: string,
-		@Query('limit') limit?: string
+		@Req() req: any,
+		@Query('limit', new DefaultValuePipe(50), ParseIntPipe) limit: number
 	): Promise<SessionsListResponseDto> {
-		if (!sessionToken) {
-			throw new HttpException('Session token required', HttpStatus.UNAUTHORIZED)
-		}
-
 		try {
-			const user = await this.userService.getUserBySessionToken(sessionToken)
-			const limitNum = limit ? parseInt(limit, 10) : 50
-			const sessions = await this.sessionService.getUserSessions(user.id, limitNum)
+			const user = req.user
+			const sessions = await this.sessionService.getUserSessions(user.id, limit)
 
 			return {
 				sessions: sessions.map((s) => this.sessionService.mapToResponseDto(s)),
@@ -141,6 +140,7 @@ export class SessionController {
 	}
 
 	@Delete('/cleanup')
+	@UseGuards(SessionGuard)
 	async cleanupInactiveSessions(@Query('days') days?: string): Promise<{ success: boolean; deleted: number }> {
 		try {
 			const daysOld = days ? parseInt(days, 10) : 7

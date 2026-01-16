@@ -3,42 +3,45 @@ import {
 	Controller,
 	DefaultValuePipe,
 	Get,
-	Headers,
 	HttpException,
 	HttpStatus,
 	Logger,
 	Param,
 	ParseIntPipe,
 	Post,
-	Query
+	Query,
+	Req,
+	UseGuards
 } from '@nestjs/common'
+import { SessionGuard } from '../commons/guards/session.guard'
 import { CreateMessagesBatchDto } from '../dtos/message/create-message-batch.dto'
 import { CreateMessageDto } from '../dtos/message/create-message.dto'
 import { MessagesListResponseDto } from '../dtos/message/message-list-response.dto'
 import { MessageResponseDto } from '../dtos/message/message-response.dto'
 import { SearchMessagesResponseDto } from '../dtos/message/search-message-response.dto'
+import { ConversationService } from '../services/conversation.service'
 import { MessageService } from '../services/message.service'
-import { UserService } from '../services/user.service'
 
 @Controller()
+@UseGuards(SessionGuard)
 export class MessageController {
 	private readonly logger = new Logger(MessageController.name)
 
 	constructor(
 		private readonly messageService: MessageService,
-		private readonly userService: UserService
+		private readonly conversationService: ConversationService
 	) {}
 
 	@Post('/')
-	async saveMessage(
-		@Headers('x-session-token') sessionToken: string,
-		@Body() dto: CreateMessageDto
-	): Promise<MessageResponseDto> {
-		if (!sessionToken) {
-			throw new HttpException('Session token required', HttpStatus.UNAUTHORIZED)
-		}
-
+	async saveMessage(@Req() req: any, @Body() dto: CreateMessageDto): Promise<MessageResponseDto> {
 		try {
+			const user = req.user
+			const conversation = await this.conversationService.getConversationById(dto.conversationId)
+
+			if (conversation.userId !== user.id) {
+				throw new HttpException('Conversation not found', HttpStatus.NOT_FOUND)
+			}
+
 			const message = await this.messageService.saveMessage(dto)
 
 			return this.messageService.mapToResponseDto(message)
@@ -55,12 +58,19 @@ export class MessageController {
 
 	@Post('/batch')
 	async saveMessagesBatch(
-		@Headers('x-session-token') sessionToken: string,
+		@Req() req: any,
 		@Body() dto: CreateMessagesBatchDto
 	): Promise<{ saved: number; messages: MessageResponseDto[] }> {
 		try {
-			if (!sessionToken) {
-				throw new HttpException('Session token required', HttpStatus.UNAUTHORIZED)
+			const user = req.user
+
+			if (dto.messages.length > 0) {
+				const conversationId = dto.messages[0].conversationId
+				const conversation = await this.conversationService.getConversationById(conversationId)
+
+				if (conversation.userId !== user.id) {
+					throw new HttpException('Conversation not found', HttpStatus.NOT_FOUND)
+				}
 			}
 
 			const messages = await this.messageService.saveMessagesBatch(dto.messages)
@@ -82,15 +92,18 @@ export class MessageController {
 
 	@Get('/conversation/:conversationId')
 	async getConversationMessages(
-		@Headers('x-session-token') sessionToken: string,
+		@Req() req: any,
 		@Param('conversationId') conversationId: string,
 		@Query('limit', new DefaultValuePipe(20), ParseIntPipe) limit: number
 	): Promise<MessagesListResponseDto> {
-		if (!sessionToken) {
-			throw new HttpException('Session token required', HttpStatus.UNAUTHORIZED)
-		}
-
 		try {
+			const user = req.user
+			const conversation = await this.conversationService.getConversationById(conversationId)
+
+			if (conversation.userId !== user.id) {
+				throw new HttpException('Conversation not found', HttpStatus.NOT_FOUND)
+			}
+
 			const messages = await this.messageService.getConversationMessages(conversationId, limit)
 
 			return {
@@ -111,20 +124,16 @@ export class MessageController {
 
 	@Get('/search')
 	async searchMessages(
-		@Headers('x-session-token') sessionToken: string,
+		@Req() req: any,
 		@Query('q') query: string,
-		@Query('limit', new DefaultValuePipe(50), ParseIntPipe) limit?: number
+		@Query('limit', new DefaultValuePipe(50), ParseIntPipe) limit: number
 	): Promise<SearchMessagesResponseDto> {
-		if (!sessionToken) {
-			throw new HttpException('Session token required', HttpStatus.UNAUTHORIZED)
-		}
-
 		if (!query) {
 			throw new HttpException('Search query required', HttpStatus.BAD_REQUEST)
 		}
 
 		try {
-			const user = await this.userService.getUserBySessionToken(sessionToken)
+			const user = req.user
 			const messages = await this.messageService.searchMessages(user.id, query, limit)
 
 			return {

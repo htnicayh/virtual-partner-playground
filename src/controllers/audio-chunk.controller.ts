@@ -26,7 +26,7 @@ export class AudioChunkController {
 				throw error
 			}
 
-			throw new HttpException(error.message, HttpStatus.INTERNAL_SERVER_ERROR)
+			throw new HttpException('An unexpected error occurred', HttpStatus.INTERNAL_SERVER_ERROR)
 		}
 	}
 
@@ -49,7 +49,7 @@ export class AudioChunkController {
 				throw error
 			}
 
-			throw new HttpException(error.message, HttpStatus.INTERNAL_SERVER_ERROR)
+			throw new HttpException('An unexpected error occurred', HttpStatus.INTERNAL_SERVER_ERROR)
 		}
 	}
 
@@ -74,7 +74,7 @@ export class AudioChunkController {
 				throw error
 			}
 
-			throw new HttpException(error.message, HttpStatus.INTERNAL_SERVER_ERROR)
+			throw new HttpException('An unexpected error occurred', HttpStatus.INTERNAL_SERVER_ERROR)
 		}
 	}
 
@@ -93,7 +93,7 @@ export class AudioChunkController {
 				throw error
 			}
 
-			throw new HttpException(error.message, HttpStatus.INTERNAL_SERVER_ERROR)
+			throw new HttpException('An unexpected error occurred', HttpStatus.INTERNAL_SERVER_ERROR)
 		}
 	}
 
@@ -112,7 +112,7 @@ export class AudioChunkController {
 				throw error
 			}
 
-			throw new HttpException(error.message, HttpStatus.INTERNAL_SERVER_ERROR)
+			throw new HttpException('An unexpected error occurred', HttpStatus.INTERNAL_SERVER_ERROR)
 		}
 	}
 
@@ -135,7 +135,7 @@ export class AudioChunkController {
 				throw error
 			}
 
-			throw new HttpException(error.message, HttpStatus.INTERNAL_SERVER_ERROR)
+			throw new HttpException('An unexpected error occurred', HttpStatus.INTERNAL_SERVER_ERROR)
 		}
 	}
 }

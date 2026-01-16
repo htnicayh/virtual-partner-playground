@@ -17,37 +17,39 @@ export class MessageService {
 	) {}
 
 	async saveMessage(dto: CreateMessageDto): Promise<Message> {
-		const conversation = await this.conversationRepository.findOne({
-			where: { conversationId: dto.conversationId }
+		return this.messageRepository.manager.transaction(async (manager) => {
+			const conversation = await this.conversationRepository.findOne({
+				where: { conversationId: dto.conversationId }
+			})
+
+			if (!conversation) {
+				throw new NotFoundException(`Conversation not found: ${dto.conversationId}`)
+			}
+
+			const lastMessage = await manager.findOne(Message, {
+				where: { conversationId: conversation.id },
+				order: { messageIndex: 'DESC' },
+				lock: { mode: 'pessimistic_write' }
+			})
+
+			const messageIndex = lastMessage ? lastMessage.messageIndex + 1 : 0
+			const message = manager.create(Message, {
+				conversationId: conversation.id,
+				role: dto.role,
+				content: dto.content,
+				contentType: dto.contentType || 'text',
+				isFinal: dto.isFinal ?? true,
+				hasAudio: dto.hasAudio ?? false,
+				audioDurationMs: dto.audioDurationMs,
+				messageIndex
+			})
+
+			const saved = await manager.save(message)
+
+			this.logger.debug(`Saved message #${messageIndex} for conversation: ${dto.conversationId}`)
+
+			return saved
 		})
-
-		if (!conversation) {
-			throw new NotFoundException(`Conversation not found: ${dto.conversationId}`)
-		}
-
-		const lastMessage = await this.messageRepository.findOne({
-			where: { conversationId: conversation.id },
-			order: { messageIndex: 'DESC' },
-			lock: { mode: 'pessimistic_write' }
-		})
-
-		const messageIndex = lastMessage ? lastMessage.messageIndex + 1 : 0
-		const message = this.messageRepository.create({
-			conversationId: conversation.id,
-			role: dto.role,
-			content: dto.content,
-			contentType: dto.contentType || 'text',
-			isFinal: dto.isFinal ?? true,
-			hasAudio: dto.hasAudio ?? false,
-			audioDurationMs: dto.audioDurationMs,
-			messageIndex
-		})
-
-		const saved = await this.messageRepository.save(message)
-
-		this.logger.debug(`Saved message #${messageIndex} for conversation: ${dto.conversationId}`)
-
-		return saved
 	}
 
 	async saveMessagesBatch(messages: CreateMessageDto[]): Promise<Message[]> {
