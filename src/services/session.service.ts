@@ -23,6 +23,14 @@ export class SessionService {
 			throw new NotFoundException('User not found')
 		}
 
+		const existing = await this.sessionRepository.findOne({
+			where: { socketId: dto.socketId }
+		})
+
+		if (existing) {
+			throw new BadRequestException('Session with this socket ID already exists')
+		}
+
 		const session = this.sessionRepository.create({
 			userId,
 			socketId: dto.socketId,

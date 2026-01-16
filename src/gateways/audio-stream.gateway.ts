@@ -110,9 +110,6 @@ Keep responses conversational and encouraging.`
 			try {
 				user = await this.userService.getUserById(mb.userId)
 			} catch (error) {
-				// User doesn't exist, create new one with fingerprint
-				this.logger.log(`[${clientID}] User ${mb.userId} not found, creating new user with fingerprint`)
-
 				if (error?.status === 404 || error?.message?.includes('not found')) {
 					this.logger.log(`[${clientID}] User ${mb.userId} not found, creating new user with fingerprint`)
 					user = await this.userService.findOrCreateUser({ fingerprint: mb.userId })

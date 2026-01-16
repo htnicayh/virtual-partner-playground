@@ -85,11 +85,23 @@ export class ConversationController {
 
 	@Put('/:conversationId')
 	async updateConversation(
+		@Headers('x-session-token') sessionToken: string,
 		@Param('conversationId') conversationId: string,
 		@Body() dto: UpdateConversationDto
 	): Promise<{ success: boolean; message: string }> {
+		if (!sessionToken) {
+			throw new HttpException('Session token required', HttpStatus.UNAUTHORIZED)
+		}
+
 		try {
-			await this.conversationService.updateConversation(conversationId, dto)
+			const user = await this.userService.getUserBySessionToken(sessionToken)
+			const conversation = await this.conversationService.getConversationByConversationId(conversationId)
+
+			if (conversation.userId !== user.id) {
+				throw new HttpException('Conversation not found', HttpStatus.NOT_FOUND)
+			}
+
+			await this.conversationService.updateConversation(conversation.id, dto)
 
 			return { success: true, message: 'Conversation updated successfully' }
 		} catch (error) {
