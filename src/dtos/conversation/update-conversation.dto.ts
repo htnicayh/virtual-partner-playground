@@ -1,9 +1,15 @@
 import { IsEnum, IsNumber, IsOptional } from 'class-validator'
 
+export enum ConversationStatus {
+	ACTIVE = 'active',
+	ENDED = 'ended',
+	INTERRUPTED = 'interrupted'
+}
+
 export class UpdateConversationDto {
 	@IsOptional()
-	@IsEnum(['active', 'ended', 'interrupted'])
-	status?: 'active' | 'ended' | 'interrupted'
+	@IsEnum(ConversationStatus)
+	status?: ConversationStatus
 
 	@IsOptional()
 	@IsNumber()

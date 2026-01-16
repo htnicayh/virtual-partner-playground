@@ -17,7 +17,14 @@ export class MessageController {
 	) {}
 
 	@Post('/')
-	async saveMessage(@Body() dto: CreateMessageDto): Promise<MessageResponseDto> {
+	async saveMessage(
+		@Headers('x-session-token') sessionToken: string,
+		@Body() dto: CreateMessageDto
+	): Promise<MessageResponseDto> {
+		if (!sessionToken) {
+			throw new HttpException('Session token required', HttpStatus.UNAUTHORIZED)
+		}
+
 		try {
 			const message = await this.messageService.saveMessage(dto)
 
@@ -57,9 +64,14 @@ export class MessageController {
 
 	@Get('/conversation/:conversationId')
 	async getConversationMessages(
+		@Headers('x-session-token') sessionToken: string,
 		@Param('conversationId') conversationId: string,
 		@Query('limit') limit?: string
 	): Promise<MessagesListResponseDto> {
+		if (!sessionToken) {
+			throw new HttpException('Session token required', HttpStatus.UNAUTHORIZED)
+		}
+
 		try {
 			const limitNum = limit ? parseInt(limit, 10) : undefined
 			const messages = await this.messageService.getConversationMessages(conversationId, limitNum)

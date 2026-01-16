@@ -120,6 +120,11 @@ export class AudioChunkController {
 	async cleanupOldAudioChunks(@Query('days') days?: string): Promise<{ success: boolean; deleted: number }> {
 		try {
 			const daysOld = days ? parseInt(days, 10) : 30
+
+			if (!Number.isFinite(daysOld) || daysOld <= 0) {
+				throw new HttpException('days must be a positive integer', HttpStatus.BAD_REQUEST)
+			}
+
 			const deleted = await this.audioChunkService.cleanupOldAudioChunks(daysOld)
 
 			return { success: true, deleted }

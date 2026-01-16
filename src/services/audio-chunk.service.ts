@@ -1,4 +1,4 @@
-import { Injectable, Logger, NotFoundException } from '@nestjs/common'
+import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common'
 import { InjectRepository } from '@nestjs/typeorm'
 import { LessThan, Repository } from 'typeorm'
 import { AudioChunkResponseDto } from '../dtos/audio/audio-chunk-response.dto'
@@ -33,6 +33,10 @@ export class AudioChunkService {
 
 		if (!conversation) {
 			throw new NotFoundException('Conversation not found')
+		}
+
+		if (message.conversationId !== conversation.id) {
+			throw new BadRequestException('Message does not belong to conversation')
 		}
 
 		const chunk = this.audioChunkRepository.create({
@@ -82,6 +86,10 @@ export class AudioChunkService {
 	}
 
 	async cleanupOldAudioChunks(daysOld = 30): Promise<number> {
+		if (!Number.isFinite(daysOld) || daysOld <= 0) {
+			throw new BadRequestException('days must be a positive integer')
+		}
+
 		const cutoffDate = new Date()
 
 		cutoffDate.setDate(cutoffDate.getDate() - daysOld)

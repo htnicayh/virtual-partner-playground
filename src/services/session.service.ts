@@ -86,6 +86,10 @@ export class SessionService {
 	}
 
 	async cleanupInactiveSessions(daysOld = 7): Promise<number> {
+		if (!Number.isFinite(daysOld) || daysOld <= 0) {
+			throw new Error('days must be a positive integer')
+		}
+
 		const cutoffDate = new Date()
 		cutoffDate.setDate(cutoffDate.getDate() - daysOld)
 

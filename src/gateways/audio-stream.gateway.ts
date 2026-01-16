@@ -22,6 +22,8 @@ import { LlmService } from '../services/llm.service'
 import { MessageService } from '../services/message.service'
 import { UserService } from '../services/user.service'
 import { cleanFinalTranscript, cleanTranscript } from '../utils'
+import { ConversationStatus } from '../dtos/conversation/update-conversation.dto'
+import { MessageRole, MessageType } from '../dtos/message/create-message.dto'
 
 @WebSocketGateway({
 	cors: {
@@ -229,7 +231,7 @@ Keep responses conversational and encouraging.`
 
 				// Update conversation status and metrics
 				await this.conversationService.updateConversation(audioSession.conversationId, {
-					status: 'ended',
+					status: ConversationStatus.ENDED,
 					audioBytes,
 					audioChunks
 				})
@@ -339,9 +341,9 @@ Keep responses conversational and encouraging.`
 						if (audioSession?.conversationId) {
 							await this.messageService.saveMessage({
 								conversationId: audioSession.conversationId,
-								role: 'user',
+								role: MessageRole.USER,
 								content: finalText,
-								contentType: 'text',
+								contentType: MessageType.TEXT,
 								isFinal: true,
 								hasAudio: true
 							})
@@ -361,6 +363,7 @@ Keep responses conversational and encouraging.`
 			}
 		}, this.SILENCE_TIMEOUT)
 	}
+
 	private async handleLiveAPIMessage(client: Socket, message: LiveServerMessage) {
 		const clientID = client.id
 

@@ -27,7 +27,8 @@ export class MessageService {
 
 		const lastMessage = await this.messageRepository.findOne({
 			where: { conversationId: conversation.id },
-			order: { messageIndex: 'DESC' }
+			order: { messageIndex: 'DESC' },
+			lock: { mode: 'pessimistic_write' }
 		})
 
 		const messageIndex = lastMessage ? lastMessage.messageIndex + 1 : 0

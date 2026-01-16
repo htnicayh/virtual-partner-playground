@@ -456,7 +456,7 @@
 		</div>
 
 		<script>
-			const IS_DEV = true
+			const IS_DEV = false
 			const SERVER_URL = IS_DEV ? 'ws://localhost:3000' : 'wss://virtual-partner-backend-production.up.railway.app'
 
 			let socket = null
@@ -479,7 +479,7 @@
 			let transcriptTimeout = null
 
 			// Browser Fingerprinting for Anonymous Users
-			async function generateFingerprint() {
+			function generateFingerprint() {
 				const components = [
 					navigator.userAgent,
 					navigator.language,

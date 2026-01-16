@@ -17,7 +17,7 @@ export const getDatabaseConfig = (): TypeOrmModuleOptions => ({
 	password: process.env.DATABASE_PASSWORD,
 	database: process.env.DATABASE_NAME || 'postgres',
 	entities: getDatabaseModels(),
-	synchronize: process.env.DATABASE_SYNCHRONIZE === 'false',
+	synchronize: process.env.DATABASE_SYNCHRONIZE === 'true',
 	logging: process.env.DATABASE_LOGGING === 'true',
 	ssl: false,
 	extra: {

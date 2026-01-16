@@ -1,18 +1,29 @@
 import { IsString, IsEnum, IsBoolean, IsNumber, IsOptional } from 'class-validator'
 
+export enum MessageRole {
+	USER = 'user',
+	ASSISTANT = 'assistant'
+}
+
+export enum MessageType {
+	TEXT = 'text',
+	AUDIO = 'audio',
+	BOTH = 'both'
+}
+
 export class CreateMessageDto {
 	@IsString()
 	conversationId: string
 
-	@IsEnum(['user', 'assistant'])
-	role: 'user' | 'assistant'
+	@IsEnum(MessageRole)
+	role: MessageRole
 
 	@IsString()
 	content: string
 
 	@IsOptional()
-	@IsEnum(['text', 'audio', 'both'])
-	contentType?: 'text' | 'audio' | 'both'
+	@IsEnum(MessageType)
+	contentType?: MessageType
 
 	@IsOptional()
 	@IsBoolean()

@@ -53,9 +53,21 @@ export class ConversationController {
 	}
 
 	@Get('/:conversationId')
-	async getConversation(@Param('conversationId') conversationId: string): Promise<ConversationResponseDto> {
+	async getConversation(
+		@Headers('x-session-token') sessionToken: string,
+		@Param('conversationId') conversationId: string
+	): Promise<ConversationResponseDto> {
+		if (!sessionToken) {
+			throw new HttpException('Session token required', HttpStatus.UNAUTHORIZED)
+		}
+
 		try {
+			const user = await this.userService.getUserBySessionToken(sessionToken)
 			const conversation = await this.conversationService.getConversationByConversationId(conversationId)
+
+			if (conversation.userId !== user.id) {
+				throw new HttpException('Conversation not found', HttpStatus.NOT_FOUND)
+			}
 
 			return this.conversationService.mapToResponseDto(conversation)
 		} catch (error) {
