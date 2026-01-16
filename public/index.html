@@ -507,11 +507,16 @@
 				return 'fp_' + hashStr
 			}
 
+			function generateAnonymousId() {
+				if (window.crypto?.randomUUID) return `anon_${crypto.randomUUID()}`
+				return `anon_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`
+			}
+
 			function getUserId() {
 				let userId = localStorage.getItem('userId')
 
 				if (!userId) {
-					userId = generateFingerprint()
+					userId = generateAnonymousId()
 					localStorage.setItem('userId', userId)
 
 					if (IS_DEV) log(`Generated new userId: ${userId}`)
@@ -602,7 +607,12 @@
 
 			function updateCurrentUserMessage(text) {
 				const container = document.getElementById('sidebarMessages')
-				const lastMessage = container.lastElementChild
+
+				let lastMessage = container.lastElementChild
+
+				if (lastMessage && lastMessage.classList.contains('loading')) {
+					lastMessage = lastMessage.previousElementSibling
+				}
 
 				if (lastMessage && lastMessage.classList.contains('user')) {
 					lastMessage.textContent = text
@@ -735,6 +745,10 @@
 						addChatMessage(data.text, 'assistant')
 						// Chỉ ẩn loading khi AI response đã hoàn tất
 						removeLoadingMessage()
+						if (transcriptTimeout) {
+							clearTimeout(transcriptTimeout)
+							transcriptTimeout = null
+						}
 					}
 				})
 

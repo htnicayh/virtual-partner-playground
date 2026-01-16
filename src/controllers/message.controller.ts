@@ -65,10 +65,15 @@ export class MessageController {
 			const user = req.user
 
 			if (dto.messages.length > 0) {
-				const conversationId = dto.messages[0].conversationId
-				const conversation = await this.conversationService.getConversationById(conversationId)
+				const conversationIds = [...new Set(dto.messages.map((m) => m.conversationId))]
 
-				if (conversation.userId !== user.id) {
+				const conversations = await Promise.all(
+					conversationIds.map((id) => this.conversationService.getConversationById(id))
+				)
+
+				const unauthorized = conversations.some((conversation) => conversation.userId !== user.id)
+
+				if (unauthorized) {
 					throw new HttpException('Conversation not found', HttpStatus.NOT_FOUND)
 				}
 			}

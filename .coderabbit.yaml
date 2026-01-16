@@ -8,13 +8,10 @@ reviews:
   request_changes_workflow: false
   high_level_summary: true
   high_level_summary_instructions: |
-    Provide a concise high-level technical summary of this pull request:
-    - What problem is being solved and the motivation behind the change
-    - Key components, modules, or services affected
-    - Notable changes to runtime behavior, data models, transactions, or infrastructure
-    - Call out any breaking changes, migration needs, or deployment risks
-    - Assess the overall risk level (low / medium / high)
-    Avoid restating the code diff line by line.
+    Briefly summarize this pull request:
+    - Purpose of the change
+    - Main affected components
+    - Any breaking changes or notable risks
   high_level_summary_placeholder: '@coderabbitai summary'
   high_level_summary_in_walkthrough: false
   auto_title_placeholder: '@coderabbitai'
