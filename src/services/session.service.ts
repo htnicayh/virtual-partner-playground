@@ -1,4 +1,4 @@
-import { Injectable, Logger, NotFoundException } from '@nestjs/common'
+import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common'
 import { InjectRepository } from '@nestjs/typeorm'
 import { LessThan, Repository } from 'typeorm'
 import { CreateSessionDto } from '../dtos/session/create-session.dto'
@@ -57,7 +57,11 @@ export class SessionService {
 	}
 
 	async updateSessionActivity(socketId: string): Promise<void> {
-		await this.sessionRepository.update({ socketId }, { lastActivityAt: new Date() })
+		const result = await this.sessionRepository.update({ socketId }, { lastActivityAt: new Date() })
+
+		if (!result.affected) {
+			throw new NotFoundException('Session not found')
+		}
 	}
 
 	async getSessionBySocketId(socketId: string): Promise<Session> {
@@ -86,8 +90,8 @@ export class SessionService {
 	}
 
 	async cleanupInactiveSessions(daysOld = 7): Promise<number> {
-		if (!Number.isFinite(daysOld) || daysOld <= 0) {
-			throw new Error('days must be a positive integer')
+		if (!Number.isInteger(daysOld) || daysOld <= 0) {
+			throw new BadRequestException('daysOld must be a positive integer')
 		}
 
 		const cutoffDate = new Date()

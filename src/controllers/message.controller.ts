@@ -1,4 +1,17 @@
-import { Body, Controller, Get, Headers, HttpException, HttpStatus, Logger, Param, Post, Query } from '@nestjs/common'
+import {
+	Body,
+	Controller,
+	DefaultValuePipe,
+	Get,
+	Headers,
+	HttpException,
+	HttpStatus,
+	Logger,
+	Param,
+	ParseIntPipe,
+	Post,
+	Query
+} from '@nestjs/common'
 import { CreateMessagesBatchDto } from '../dtos/message/create-message-batch.dto'
 import { CreateMessageDto } from '../dtos/message/create-message.dto'
 import { MessagesListResponseDto } from '../dtos/message/message-list-response.dto'
@@ -42,9 +55,14 @@ export class MessageController {
 
 	@Post('/batch')
 	async saveMessagesBatch(
+		@Headers('x-session-token') sessionToken: string,
 		@Body() dto: CreateMessagesBatchDto
 	): Promise<{ saved: number; messages: MessageResponseDto[] }> {
 		try {
+			if (!sessionToken) {
+				throw new HttpException('Session token required', HttpStatus.UNAUTHORIZED)
+			}
+
 			const messages = await this.messageService.saveMessagesBatch(dto.messages)
 
 			return {
@@ -66,15 +84,14 @@ export class MessageController {
 	async getConversationMessages(
 		@Headers('x-session-token') sessionToken: string,
 		@Param('conversationId') conversationId: string,
-		@Query('limit') limit?: string
+		@Query('limit', new DefaultValuePipe(20), ParseIntPipe) limit: number
 	): Promise<MessagesListResponseDto> {
 		if (!sessionToken) {
 			throw new HttpException('Session token required', HttpStatus.UNAUTHORIZED)
 		}
 
 		try {
-			const limitNum = limit ? parseInt(limit, 10) : undefined
-			const messages = await this.messageService.getConversationMessages(conversationId, limitNum)
+			const messages = await this.messageService.getConversationMessages(conversationId, limit)
 
 			return {
 				conversationId,
@@ -96,7 +113,7 @@ export class MessageController {
 	async searchMessages(
 		@Headers('x-session-token') sessionToken: string,
 		@Query('q') query: string,
-		@Query('limit') limit?: string
+		@Query('limit', new DefaultValuePipe(50), ParseIntPipe) limit?: number
 	): Promise<SearchMessagesResponseDto> {
 		if (!sessionToken) {
 			throw new HttpException('Session token required', HttpStatus.UNAUTHORIZED)
@@ -108,8 +125,7 @@ export class MessageController {
 
 		try {
 			const user = await this.userService.getUserBySessionToken(sessionToken)
-			const limitNum = limit ? parseInt(limit, 10) : 50
-			const messages = await this.messageService.searchMessages(user.id, query, limitNum)
+			const messages = await this.messageService.searchMessages(user.id, query, limit)
 
 			return {
 				query,

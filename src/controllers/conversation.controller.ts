@@ -1,12 +1,14 @@
 import {
 	Body,
 	Controller,
+	DefaultValuePipe,
 	Get,
 	Headers,
 	HttpException,
 	HttpStatus,
 	Logger,
 	Param,
+	ParseIntPipe,
 	Post,
 	Put,
 	Query
@@ -104,8 +106,8 @@ export class ConversationController {
 	@Get('/')
 	async getUserConversations(
 		@Headers('x-session-token') sessionToken: string,
-		@Query('limit') limit?: string,
-		@Query('offset') offset?: string
+		@Query('limit', new DefaultValuePipe(20), ParseIntPipe) limit: number,
+		@Query('offset', new DefaultValuePipe(0), ParseIntPipe) offset: number
 	): Promise<ConversationListResponseDto> {
 		if (!sessionToken) {
 			throw new HttpException('Session token required', HttpStatus.UNAUTHORIZED)
@@ -114,19 +116,16 @@ export class ConversationController {
 		try {
 			const user = await this.userService.getUserBySessionToken(sessionToken)
 
-			const limitNum = limit ? parseInt(limit, 10) : 20
-			const offsetNum = offset ? parseInt(offset, 10) : 0
-
 			const [conversations, total] = await Promise.all([
-				this.conversationService.getUserConversations(user.id, limitNum, offsetNum),
+				this.conversationService.getUserConversations(user.id, limit, offset),
 				this.conversationService.getUserConversationsCount(user.id)
 			])
 
 			return {
 				conversations: conversations.map((c) => this.conversationService.mapToResponseDto(c)),
 				total,
-				limit: limitNum,
-				offset: offsetNum
+				limit,
+				offset
 			}
 		} catch (error) {
 			this.logger.error(`Get conversations error: ${error.message}`)

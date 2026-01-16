@@ -15,6 +15,8 @@ import { EVENTS, EVENTS_EMIT } from '../commons/constants'
 import { LiveAPIConfig } from '../commons/interfaces/live-api.interface'
 import { AudioChunk, StartStream } from '../commons/interfaces/message-body.interface'
 import { TranscriptState } from '../commons/interfaces/transcript-state.interface'
+import { ConversationStatus } from '../dtos/conversation/update-conversation.dto'
+import { MessageRole, MessageType } from '../dtos/message/create-message.dto'
 import { AudioService } from '../services/audio.service'
 import { CacheService } from '../services/cache.service'
 import { ConversationService } from '../services/conversation.service'
@@ -22,8 +24,6 @@ import { LlmService } from '../services/llm.service'
 import { MessageService } from '../services/message.service'
 import { UserService } from '../services/user.service'
 import { cleanFinalTranscript, cleanTranscript } from '../utils'
-import { ConversationStatus } from '../dtos/conversation/update-conversation.dto'
-import { MessageRole, MessageType } from '../dtos/message/create-message.dto'
 
 @WebSocketGateway({
 	cors: {
@@ -113,7 +113,12 @@ Keep responses conversational and encouraging.`
 				// User doesn't exist, create new one with fingerprint
 				this.logger.log(`[${clientID}] User ${mb.userId} not found, creating new user with fingerprint`)
 
-				user = await this.userService.findOrCreateUser({ fingerprint: mb.userId })
+				if (error?.status === 404 || error?.message?.includes('not found')) {
+					this.logger.log(`[${clientID}] User ${mb.userId} not found, creating new user with fingerprint`)
+					user = await this.userService.findOrCreateUser({ fingerprint: mb.userId })
+				} else {
+					throw error
+				}
 			}
 
 			// Create conversation in database
