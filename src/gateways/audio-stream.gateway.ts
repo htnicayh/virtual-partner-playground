@@ -1,5 +1,5 @@
 import { LiveServerMessage, Modality } from '@google/genai'
-import { Injectable, Logger } from '@nestjs/common'
+import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common'
 import { ConfigService } from '@nestjs/config'
 import {
 	ConnectedSocket,
@@ -15,10 +15,15 @@ import { EVENTS, EVENTS_EMIT } from '../commons/constants'
 import { LiveAPIConfig } from '../commons/interfaces/live-api.interface'
 import { AudioChunk, StartStream } from '../commons/interfaces/message-body.interface'
 import { TranscriptState } from '../commons/interfaces/transcript-state.interface'
+import { ConversationStatus } from '../dtos/conversation/update-conversation.dto'
+import { MessageRole, MessageType } from '../dtos/message/create-message.dto'
 import { AudioService } from '../services/audio.service'
 import { CacheService } from '../services/cache.service'
+import { ConversationService } from '../services/conversation.service'
 import { LlmService } from '../services/llm.service'
-import { cleanTranscript } from '../utils'
+import { MessageService } from '../services/message.service'
+import { UserService } from '../services/user.service'
+import { cleanFinalTranscript, cleanTranscript } from '../utils'
 
 @WebSocketGateway({
 	cors: {
@@ -33,7 +38,7 @@ export class AudioStreamGateway implements OnGatewayConnection, OnGatewayDisconn
 	private readonly systemInstruction: string
 	private readonly geminiModel: string
 	private readonly SILENCE_TIMEOUT = 1000 // 1 second
-	private transcriptStates: Map<string, TranscriptState> = new Map()
+	private readonly transcriptStates: Map<string, TranscriptState> = new Map()
 
 	@WebSocketServer()
 	server: Server
@@ -42,7 +47,10 @@ export class AudioStreamGateway implements OnGatewayConnection, OnGatewayDisconn
 		private readonly configService: ConfigService,
 		private readonly audioService: AudioService,
 		private readonly cacheService: CacheService,
-		private readonly llmService: LlmService
+		private readonly llmService: LlmService,
+		private readonly conversationService: ConversationService,
+		private readonly messageService: MessageService,
+		private readonly userService: UserService
 	) {
 		this.systemInstruction = `You are an English conversation teacher. 
 Your role is to:
@@ -95,6 +103,42 @@ Keep responses conversational and encouraging.`
 
 		try {
 			await this.audioService.createAudioSession(clientID, mb.sessionId, mb.conversationId)
+
+			// Auto-create user if not exists
+			let user
+
+			try {
+				user = await this.userService.getUserById(mb.userId)
+			} catch (error) {
+				if (error instanceof NotFoundException || error?.message?.includes('not found')) {
+					this.logger.log(`[${clientID}] User ${mb.userId} not found, creating new user with fingerprint`)
+					user = await this.userService.findOrCreateUser({ fingerprint: mb.userId })
+				} else {
+					throw error
+				}
+			}
+
+			if (!user) {
+				throw new BadRequestException('Failed to resolve user')
+			}
+
+			// Create conversation in database
+			try {
+				await this.conversationService.createConversation(user.id, {
+					conversationId: mb.conversationId,
+					sessionId: mb.sessionId,
+					socketId: clientID
+				})
+
+				this.logger.log(`[${clientID}] Created conversation: ${mb.conversationId} for user: ${user.id}`)
+			} catch (error) {
+				if (error instanceof BadRequestException) {
+					this.logger.warn(`[${clientID}] Conversation already exists: ${error.message}`)
+				} else {
+					this.logger.error(`[${clientID}] Failed to create conversation: ${error.message}`)
+					throw error
+				}
+			}
 
 			const config: LiveAPIConfig = {
 				model: this.geminiModel,
@@ -186,6 +230,28 @@ Keep responses conversational and encouraging.`
 
 		this.transcriptStates.delete(clientID)
 
+		// Update conversation metrics before ending
+		try {
+			const audioSession = await this.audioService.getAudioSession(clientID)
+
+			if (audioSession?.conversationId) {
+				// Get audio metrics
+				const audioBytes = audioSession.totalBytes || 0
+				const audioChunks = audioSession.totalChunksReceived || 0
+
+				// Update conversation status and metrics
+				await this.conversationService.updateConversation(audioSession.conversationId, {
+					status: ConversationStatus.ENDED,
+					audioBytes,
+					audioChunks
+				})
+
+				this.logger.log(`[${clientID}] Updated conversation ${audioSession.conversationId} metrics`)
+			}
+		} catch (error) {
+			this.logger.error(`[${clientID}] Failed to update conversation: ${error.message}`)
+		}
+
 		await this.cacheService.setSessionState(clientID, { isClosed: true, closedAt: Date.now() })
 		await Promise.allSettled([
 			this.cacheService.clearClientCaches(clientID),
@@ -198,16 +264,6 @@ Keep responses conversational and encouraging.`
 			message: 'Conversation session closed',
 			timestamp: Date.now()
 		})
-	}
-
-	private cleanFinalTranscript(text: string): string {
-		let cleaned = text
-			.trim()
-			.replace(/\s+/g, ' ') // Remove multiple spaces
-			.replace(/\s+([.,!?;:])/g, '$1') // Remove space before punctuation
-			.replace(/([.,!?;:])\s*([.,!?;:])/g, '$1$2') // Remove space between punctuation
-
-		return cleaned
 	}
 
 	private handleUserTranscript(client: Socket, text: string) {
@@ -272,12 +328,12 @@ Keep responses conversational and encouraging.`
 		}
 
 		// Set new timeout to emit after 1 second of silence
-		state.timeout = setTimeout(() => {
+		state.timeout = setTimeout(async () => {
 			const currentState = this.transcriptStates.get(clientID)
 
 			if (currentState && currentState.accumulatedText) {
 				// Clean up the accumulated text
-				const finalText = this.cleanFinalTranscript(currentState.accumulatedText)
+				const finalText = cleanFinalTranscript(currentState.accumulatedText)
 
 				this.logger.debug(`[${clientID}] Final transcript: "${finalText}"`)
 
@@ -287,6 +343,25 @@ Keep responses conversational and encouraging.`
 						text: finalText,
 						timestamp: Date.now()
 					})
+
+					// Save user message to database
+					try {
+						const audioSession = await this.audioService.getAudioSession(clientID)
+
+						if (audioSession?.conversationId) {
+							await this.messageService.saveMessage({
+								conversationId: audioSession.conversationId,
+								role: MessageRole.USER,
+								content: finalText,
+								contentType: MessageType.TEXT,
+								isFinal: true,
+								hasAudio: true
+							})
+							this.logger.debug(`[${clientID}] Saved user message to DB`)
+						}
+					} catch (error) {
+						this.logger.error(`[${clientID}] Failed to save user message: ${error.message}`)
+					}
 
 					// Update last emitted text
 					currentState.lastEmittedText = finalText
@@ -298,6 +373,7 @@ Keep responses conversational and encouraging.`
 			}
 		}, this.SILENCE_TIMEOUT)
 	}
+
 	private async handleLiveAPIMessage(client: Socket, message: LiveServerMessage) {
 		const clientID = client.id
 

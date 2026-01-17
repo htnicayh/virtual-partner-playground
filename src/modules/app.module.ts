@@ -5,10 +5,13 @@ import { AudioStreamGateway } from '../gateways/audio-stream.gateway'
 import { AudioService } from '../services/audio.service'
 import { CacheService } from '../services/cache.service'
 import { LlmService } from '../services/llm.service'
-import { SessionService } from '../services/session.service'
-import { ChatModule } from './chat.module'
+import { AudioChunkModule } from './audio-chunk.module'
+import { ConversationModule } from './conversation.module'
 import { DatabaseModule } from './database.module'
 import { HealthModule } from './health.module'
+import { MessageModule } from './message.module'
+import { SessionModule } from './session.module'
+import { UserModule } from './user.module'
 
 @Module({
 	imports: [
@@ -19,8 +22,24 @@ import { HealthModule } from './health.module'
 				module: AppModule,
 				children: [
 					{
-						path: '/chat',
-						module: ChatModule
+						path: '/users',
+						module: UserModule
+					},
+					{
+						path: '/conversations',
+						module: ConversationModule
+					},
+					{
+						path: '/messages',
+						module: MessageModule
+					},
+					{
+						path: '/audio-chunks',
+						module: AudioChunkModule
+					},
+					{
+						path: '/sessions',
+						module: SessionModule
 					}
 				]
 			},
@@ -29,10 +48,14 @@ import { HealthModule } from './health.module'
 				module: HealthModule
 			}
 		]),
-		ChatModule,
+		UserModule,
 		HealthModule,
-		DatabaseModule
+		MessageModule,
+		SessionModule,
+		DatabaseModule,
+		AudioChunkModule,
+		ConversationModule
 	],
-	providers: [AudioStreamGateway, LlmService, SessionService, CacheService, AudioService]
+	providers: [AudioStreamGateway, LlmService, CacheService, AudioService]
 })
 export class AppModule {}

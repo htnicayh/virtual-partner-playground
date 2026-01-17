@@ -40,4 +40,7 @@ export class Message {
 
 	@OneToMany(() => AudioChunk, (chunk) => chunk.message)
 	audioChunks: AudioChunk[]
+
+	@Column({ name: 'search_vector', type: 'tsvector', nullable: true })
+	searchVector: any
 }
