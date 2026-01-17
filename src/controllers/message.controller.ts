@@ -91,7 +91,7 @@ export class MessageController {
 				throw error
 			}
 
-			throw new HttpException(error.message, HttpStatus.INTERNAL_SERVER_ERROR)
+			throw new HttpException('Internal server error', HttpStatus.INTERNAL_SERVER_ERROR)
 		}
 	}
 
@@ -123,7 +123,7 @@ export class MessageController {
 				throw error
 			}
 
-			throw new HttpException(error.message, HttpStatus.INTERNAL_SERVER_ERROR)
+			throw new HttpException('Internal server error', HttpStatus.INTERNAL_SERVER_ERROR)
 		}
 	}
 
@@ -153,7 +153,7 @@ export class MessageController {
 				throw error
 			}
 
-			throw new HttpException(error.message, HttpStatus.INTERNAL_SERVER_ERROR)
+			throw new HttpException('Internal server error', HttpStatus.INTERNAL_SERVER_ERROR)
 		}
 	}
 }

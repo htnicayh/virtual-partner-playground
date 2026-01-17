@@ -42,7 +42,7 @@ export class UserService {
 		}
 
 		if (!user) {
-			const sessionToken = dto.sessionToken || this.generateSessionToken()
+			const sessionToken = this.generateSessionToken()
 
 			anonymousId = dto.fingerprint ? this.generateAnonymousId(dto.fingerprint) : undefined
 			user = this.userRepository.create({
